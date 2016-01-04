@@ -135,7 +135,7 @@ def main():
                         help="Trade pair in the form of bid/ask, aka"
                         "XBT/USD")
     parser.add_argument("--amount", type=float,
-                        help="Amount of asking asset for equivalent bid.",
+                        help="Bid amount to find asking price for.",
                         default=1.0)
     args = parser.parse_args()
     price = get_price(args.amount, args.trade_pair_str)
