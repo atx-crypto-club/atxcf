@@ -1,7 +1,7 @@
 from slackbot.bot import Bot
 from slackbot.bot import respond_to
 from slackbot.bot import listen_to
-from subprocess import check_output, CalledProcessError
+from subprocess import check_output, CalledProcessError, STDOUT
 import re
 
 import prices
@@ -19,11 +19,12 @@ def get_prices(message):
     print p
 
 
-@respond_to("run_shell (.*)")
-def run_shell(message, cmd):
-    out_str = "$ %s" % cmd
-    message.reply(out_str)
-    print out_str
+#@respond_to("run_shell (.*)")
+#def run_shell(message, cmd):
+#    print "Executing: %s" % cmd
+#    out_str = check_output(cmd, stderr=STDOUT,
+#                           shell=True)
+#    message.reply(out_str)
 
 
 def main():
