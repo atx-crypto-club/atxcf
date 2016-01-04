@@ -19,6 +19,13 @@ def get_prices(message):
     print p
 
 
+@respond_to('get_price (.*) (.*)', re.IGNORECASE)
+def get_price(message, value, trade_pair_str):
+    price = prices.get_price(value, trade_pair_str)
+    r_msg = "{0} {1}: {2}".format(value, trade_pair_str, price)
+    message.reply(r_msg)
+
+
 #@respond_to("run_shell (.*)")
 #def run_shell(message, cmd):
 #    print "Executing: %s" % cmd
