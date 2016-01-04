@@ -128,19 +128,19 @@ def get_price(value, trade_pair_str):
     
 
 def main():
-    #print get_fund_asset_prices()
-    #G = get_price_graph()
-    #print "Nodes:", G.nodes()
-    #print "Edges:", G.edges()
-    #print "COINOMAT1/USD:", nx.shortest_path(G,"USD","COINOMAT1")
-    #print "USD:", nx.shortest_path(G,"USD")
-    #print "XBT/USD:", G.edge["XBT"]["USD"]["value"]
-
-    #print "XBT/USD:", get_price(1.0, "XBT/USD")
-    #print "COINOMAT1/USD:", get_price(1.0, "COINOMAT1/USD")
-    #print "NXT/XBT:", get_price(1.0, "NXT/XBT")
-    print "LTC/XBT:", get_price(1.0, "LTC/XBT")
-    print "XBT/LTC:", get_price(1.0, "XBT/LTC")
+    parser = argparse.ArgumentParser(
+        description="Lookup values of various assets.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("trade_pair_str", type=str,
+                        help="Trade pair in the form of bid/ask, aka"
+                        "XBT/USD")
+    parser.add_argument("--amount", type=float,
+                        help="Amount of asking asset for equivalent bid.",
+                        default=1.0)
+    args = parser.parse_args()
+    price = get_price(args.amount, args.trade_pair_str)
+    r_msg = "{0} {1}: {2}".format(args.amount, args.trade_pair_str, price)
+    print r_msg
 
 
 if __name__ == "__main__":
