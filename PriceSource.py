@@ -14,6 +14,7 @@ from pyquery import PyQuery as pq
 import unicodedata
 
 import math
+import time
 import threading
 
 import locale
@@ -118,9 +119,17 @@ class Poloniex(PriceSource):
     """
 
     def __init__(self, creds = "poloniex_cred.json"):
-        self.pol = poloniex.poloniex(creds)
-        self.pol_ticker = self.pol.returnTicker()
+        self._pol = poloniex.poloniex(creds)
+        self._pol_ticker = self._pol.returnTicker()
+        self._pol_ticker_ts = time.time()
         self._lock = threading.RLock()
+
+
+    def _update_ticker(self):
+        # update ticker if it is older than 60 seconds.
+        if time.time() - self._pol_ticker_ts > 60:
+            self._pol_ticker = self._pol.returnTicker()
+            self._pol_ticker_ts = time.time()
 
 
     def get_symbols(self):
@@ -129,7 +138,7 @@ class Poloniex(PriceSource):
         """
         symbol_set = set()
         with self._lock:
-            for cur in self.pol_ticker.iterkeys():
+            for cur in self._pol_ticker.iterkeys():
                 for item in cur.split("_"):
                     symbol_set.add(item)
         return list(symbol_set)
@@ -141,7 +150,7 @@ class Poloniex(PriceSource):
         """
         symbol_set = set()
         with self._lock:
-            for cur in self.pol_ticker.iterkeys():
+            for cur in self._pol_ticker.iterkeys():
                 items = cur.split("_")
                 symbol_set.add(items[0]) # the first item is the base currency
         return list(symbol_set)
@@ -166,18 +175,18 @@ class Poloniex(PriceSource):
         inverse = False
         pol_symbol = to_asset + "_" + from_asset
         with self._lock:
-            if not pol_symbol in self.pol_ticker.iterkeys():
+            if not pol_symbol in self._pol_ticker.iterkeys():
                 inverse = True
                 pol_symbol = from_asset + "_" + to_asset
-                if not pol_symbol in self.pol_ticker.iterkeys():
+                if not pol_symbol in self._pol_ticker.iterkeys():
                     raise PriceSourceError("Missing market")
 
-            # TODO: update pol_ticker in another thread periodically
+            # TODO: update _pol_ticker in another thread periodically
             # or make a vectorized version of this function so we don't
             # have to keep updating the whole ticker if we are getting
             # many prices at once.
-            self.pol_ticker = self.pol.returnTicker() #update it now
-            price = float(self.pol_ticker[pol_symbol]["last"])
+            _update_ticker()
+            price = float(self._pol_ticker[pol_symbol]["last"])
             if inverse:
                 try:
                     price = 1.0/price
@@ -196,12 +205,16 @@ class CryptoAssetCharts(PriceSource):
         self._asset_symbols = set()
         self._base_symbols = set()
         self._price_map = {}
+        self._response = requests.get(self._req_url)
+        self._response_ts = time.time()
         
         self._update_info()
 
 
     def _update_info(self):
-        self._response = requests.get(self._req_url)
+        # if it is older than 60 seconds, do another request.
+        if time.time() - self._response_ts > 60:
+            self._response = requests.get(self._req_url)
         doc = pq(self._response.content)
         tbl = doc("#tableAssets")
         self._price_map = {}
