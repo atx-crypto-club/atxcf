@@ -6,6 +6,7 @@ and add an instance of it to the _sources dict.
 
 import bitfinex
 import poloniex
+# TODO: add bittrex
 
 import requests
 import re
@@ -13,6 +14,7 @@ from pyquery import PyQuery as pq
 import unicodedata
 
 import math
+import threading
 
 import locale
 locale.setlocale(locale.LC_ALL, 'en_US.UTF8')
@@ -118,6 +120,7 @@ class Poloniex(PriceSource):
     def __init__(self, creds = "poloniex_cred.json"):
         self.pol = poloniex.poloniex(creds)
         self.pol_ticker = self.pol.returnTicker()
+        self._lock = threading.RLock()
 
 
     def get_symbols(self):
@@ -125,10 +128,10 @@ class Poloniex(PriceSource):
         List of tradable symbols at Poloniex
         """
         symbol_set = set()
-        for cur in self.pol_ticker.iterkeys():
-            items = cur.split("_")
-            for item in items:
-                symbol_set.add(item)
+        with self._lock:
+            for cur in self.pol_ticker.iterkeys():
+                for item in cur.split("_"):
+                    symbol_set.add(item)
         return list(symbol_set)
 
 
@@ -137,9 +140,10 @@ class Poloniex(PriceSource):
         List of base currencies at Poloniex
         """
         symbol_set = set()
-        for cur in self.pol_ticker.iterkeys():
-            items = cur.split("_")
-            symbol_set.add(items[0]) # the first item is the base currency
+        with self._lock:
+            for cur in self.pol_ticker.iterkeys():
+                items = cur.split("_")
+                symbol_set.add(items[0]) # the first item is the base currency
         return list(symbol_set)
 
 
@@ -161,20 +165,25 @@ class Poloniex(PriceSource):
 
         inverse = False
         pol_symbol = to_asset + "_" + from_asset
-        if not pol_symbol in self.pol_ticker.iterkeys():
-            inverse = True
-            pol_symbol = from_asset + "_" + to_asset
+        with self._lock:
             if not pol_symbol in self.pol_ticker.iterkeys():
-                raise PriceSourceError("Missing market")
+                inverse = True
+                pol_symbol = from_asset + "_" + to_asset
+                if not pol_symbol in self.pol_ticker.iterkeys():
+                    raise PriceSourceError("Missing market")
 
-        self.pol_ticker = self.pol.returnTicker() #update it now
-        price = float(self.pol_ticker[pol_symbol]["last"])
-        if inverse:
-            try:
-                price = 1.0/price
-            except ZeroDivisionError:
-                pass
-        return price * amount
+            # TODO: update pol_ticker in another thread periodically
+            # or make a vectorized version of this function so we don't
+            # have to keep updating the whole ticker if we are getting
+            # many prices at once.
+            self.pol_ticker = self.pol.returnTicker() #update it now
+            price = float(self.pol_ticker[pol_symbol]["last"])
+            if inverse:
+                try:
+                    price = 1.0/price
+                except ZeroDivisionError:
+                    pass
+            return price * amount
 
 
 class CryptoAssetCharts(PriceSource):
@@ -215,7 +224,7 @@ class CryptoAssetCharts(PriceSource):
             self._base_symbols.add(base_symbol)
             
             price_val = locale.atof(price_str_comp[0])
-            self._price_map[asset_symbol+"/"+base_symbol] = price_val
+            self._price_map["_"+asset_symbol+"/"+base_symbol] = price_val
         
 
     def get_symbols(self):
@@ -256,8 +265,75 @@ class CryptoAssetCharts(PriceSource):
             if not trade_pair_str in self._price_map.iterkeys():
                 raise PriceSourceError("Missing market")
 
+        # TODO: update info in another thread periodically (see similar note in Poloniex)
         self._update_info()
         price = self._price_map[trade_pair_str]
+        if inverse:
+            try:
+                price = 1.0/price
+            except ZeroDivisionError:
+                pass
+        return price * amount
+
+
+class Synthetic(PriceSource):
+    """
+    Contains mappings and conversions between symbols such as
+    mNXT <-> NXT, XBT <-> BTC, etc.
+    """
+
+    def __init__(self):
+        super(Synthetic, self).__init__()
+        self._mapping = {
+            "XBT/BTC": 1.0,
+            "mNHZ/NHZ": 1000.0,
+            "mNXT/NXT": 1000.0,
+            "sat/BTC": 100000000,
+            "_Coinomat1/Coinomat1": 1.0,
+            "_MMNXT/MMNXT": 1.0
+        }
+
+
+    def get_symbols(self):
+        symbols = set()
+        for key in self._mapping.iterkeys():
+            symbol = key.split("/")
+            symbols.add(symbol[0])
+            symbols.add(symbol[1])
+        return list(symbols)
+
+
+    def get_base_symbols(self):
+        symbols = set()
+        for key in self._mapping.iterkeys():
+            symbol = key.split("/")
+            symbols.add(symbol[1])
+        return list(symbols)
+
+
+    def get_price(self, from_asset, to_asset, amount = 1.0):
+        """
+        Uses the mapping to convert from_asset to to_asset.
+        """
+        symbols = self.get_symbols()
+        if not from_asset in symbols:
+            raise PriceSourceError("No such symbol %s" % from_asset)
+        if not to_asset in symbols:
+            raise PriceSourceError("No such symbol %s" % to_asset)
+
+        # nothing to do here
+        if from_asset == to_asset:
+            return amount
+
+        inverse = False
+        trade_pair_str = to_asset + '/' + from_asset
+        if not trade_pair_str in self._mapping.iterkeys():
+            inverse = True
+            trade_pair_str = from_asset + '/' + to_asset
+            if not trade_pair_str in self._mapping.iterkeys():
+                raise PriceSourceError("Missing market")
+
+        price = self._mapping[trade_pair_str]
         if inverse:
             try:
                 price = 1.0/price
@@ -277,6 +353,7 @@ class AllSources(PriceSource):
             "bitfinex.com": Bitfinex(),
             "poloniex.com": Poloniex(),
             "cryptoassetcharts.info": CryptoAssetCharts(),
+            "synthetic": Synthetic(),
         }
 
 
