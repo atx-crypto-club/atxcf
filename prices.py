@@ -132,8 +132,8 @@ def main():
         description="Lookup values of various assets.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("trade_pair_str", type=str,
-                        help="Trade pair in the form of bid/ask, aka"
-                        "XBT/USD")
+                        help="Trade pair in the form of bid/ask, aka "
+                        "'XBT/USD'")
     parser.add_argument("--amount", type=float,
                         help="Bid amount to find asking price for.",
                         default=1.0)
