@@ -5,6 +5,7 @@ from subprocess import check_output, CalledProcessError, STDOUT
 import re
 
 import prices
+import PriceNetwork
 
 @respond_to('hi', re.IGNORECASE)
 def hi(message):
@@ -19,9 +20,18 @@ def get_prices(message):
     print p
 
 
+_pn = PriceNetwork.PriceNetwork()
+
+@respond_to('get_symbols')
+def get_symbols(message):
+    symbols = _pn.get_symbols()
+    message.reply(" ".join(sorted(symbols)))
+
+
 @respond_to('get_price (.*) (.*)', re.IGNORECASE)
 def get_price(message, value, trade_pair_str):
-    price = prices.get_price(value, trade_pair_str)
+    #price = prices.get_price(value, trade_pair_str)
+    price = _pn.price(trade_pair_str, value)
     r_msg = "{0} {1}: {2}".format(value, trade_pair_str, price)
     message.reply(r_msg)
 

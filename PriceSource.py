@@ -205,10 +205,10 @@ class CryptoAssetCharts(PriceSource):
         doc = pq(self._response.content)
         tbl = doc("#tableAssets")
         self._price_map = {}
-        for row in tbl.items('tr'):
+        for row in tbl('tr'):
             col = []
-            for c in row.items('td'):
-                c_text = c.text()
+            for c in row.findall('td'):
+                c_text = c.text
                 if isinstance(c_text, unicode):
                     c_text = unicodedata.normalize('NFKD', c_text).encode('ascii','ignore')
                 col.append(c_text)
