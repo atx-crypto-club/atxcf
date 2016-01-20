@@ -18,7 +18,7 @@ import time
 import threading
 
 import locale
-locale.setlocale(locale.LC_ALL, 'en_US.UTF8')
+locale.setlocale(locale.LC_ALL, '')
 
 
 class PriceSourceError(RuntimeError):
@@ -185,7 +185,7 @@ class Poloniex(PriceSource):
             # or make a vectorized version of this function so we don't
             # have to keep updating the whole ticker if we are getting
             # many prices at once.
-            _update_ticker()
+            self._update_ticker()
             price = float(self._pol_ticker[pol_symbol]["last"])
             if inverse:
                 try:
@@ -215,6 +215,7 @@ class CryptoAssetCharts(PriceSource):
         # if it is older than 60 seconds, do another request.
         if time.time() - self._response_ts > 60:
             self._response = requests.get(self._req_url)
+            self._response_ts = time.time()
         doc = pq(self._response.content)
         tbl = doc("#tableAssets")
         self._price_map = {}
