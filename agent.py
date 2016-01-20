@@ -3,6 +3,7 @@ from slackbot.bot import respond_to
 from slackbot.bot import listen_to
 from subprocess import check_output, CalledProcessError, STDOUT
 import re
+import string
 
 import prices
 import PriceNetwork
@@ -31,8 +32,15 @@ def get_symbols(message):
 @respond_to('get_price (.*) (.*)', re.IGNORECASE)
 def get_price(message, value, trade_pair_str):
     #price = prices.get_price(value, trade_pair_str)
-    price = _pn.price(trade_pair_str, value)
-    r_msg = "{0} {1}: {2}".format(value, trade_pair_str, price)
+
+    asset_strs = string.split(trade_pair_str,"/",1)
+    if len(asset_strs) != 2:
+        raise RuntimeError("Invalid trade_pair_str %s" % trade_pair_str)
+    asset_strs = [cur.strip() for cur in asset_strs]
+
+    price = _pn.get_price(asset_strs[0], asset_strs[1], value)
+    r_msg = "{0} {1} for {2} {3}".format(value, asset_strs[0], 
+                                         price, asset_strs[1])
     message.reply(r_msg)
 
 
