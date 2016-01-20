@@ -38,6 +38,12 @@ class PriceNetwork(PriceSource.AllSources):
                     G.add_edge(base, counter, last_price = last_price)
                 except:
                     pass
+
+        # conversions available
+        conv = []
+        for item in G.edges_iter():
+            conv.append("{0}/{1}".format(item[0], item[1]))
+        print "Available conversions: ", conv
         
         self._price_graph = G
 
