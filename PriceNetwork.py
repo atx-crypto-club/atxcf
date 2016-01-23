@@ -48,6 +48,11 @@ class PriceNetwork(PriceSource.AllSources):
         self._price_graph = G
 
 
+    def set_source(self, sourcename, source):
+        self._sources[sourcename] = source
+        self._generate_graph() # TODO: just add new edges
+
+
     def get_price(self, from_asset, to_asset, value = 1.0):
         G = self._price_graph
         sh_p = nx.shortest_path(G, from_asset, to_asset)

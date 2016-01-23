@@ -6,12 +6,13 @@ and add an instance of it to the _sources dict.
 
 import bitfinex
 import poloniex
-# TODO: add bittrex
+import bittrex
 
 import requests
 import re
 from pyquery import PyQuery as pq
 import unicodedata
+import json
 
 import math
 import time
@@ -57,6 +58,7 @@ class Bitfinex(PriceSource):
     """
 
     def __init__(self):
+        super(Bitfinex, self).__init__()
         self.bfx = bitfinex.Client()
         self.bfx_symbols = self.bfx.symbols()
     
@@ -119,6 +121,7 @@ class Poloniex(PriceSource):
     """
 
     def __init__(self, creds = "poloniex_cred.json"):
+        super(Poloniex, self).__init__()
         self._pol = poloniex.poloniex(creds)
         self._pol_ticker = self._pol.returnTicker()
         self._pol_ticker_ts = time.time()
@@ -181,10 +184,6 @@ class Poloniex(PriceSource):
                 if not pol_symbol in self._pol_ticker.iterkeys():
                     raise PriceSourceError("Missing market")
 
-            # TODO: update _pol_ticker in another thread periodically
-            # or make a vectorized version of this function so we don't
-            # have to keep updating the whole ticker if we are getting
-            # many prices at once.
             self._update_ticker()
             price = float(self._pol_ticker[pol_symbol]["last"])
             if inverse:
@@ -201,6 +200,7 @@ class CryptoAssetCharts(PriceSource):
     """
 
     def __init__(self):
+        super(CryptoAssetCharts, self).__init__()
         self._req_url = "http://cryptoassetcharts.info/assets/info"
         self._asset_symbols = set()
         self._base_symbols = set()
@@ -279,7 +279,6 @@ class CryptoAssetCharts(PriceSource):
             if not trade_pair_str in self._price_map.iterkeys():
                 raise PriceSourceError("Missing market")
 
-        # TODO: update info in another thread periodically (see similar note in Poloniex)
         self._update_info()
         price = self._price_map[trade_pair_str]
         if inverse:
@@ -290,14 +289,95 @@ class CryptoAssetCharts(PriceSource):
         return price * amount
 
 
-class Synthetic(PriceSource):
+class Bittrex(PriceSource):
+    """
+    Using bittrex as an asset price source.
+    """
+
+    def __init__(self, creds = "bittrex_cred.json"):
+        super(Bittrex, self).__init__()
+        js_cred = json.load(open(creds))
+        api_key = str(js_cred["key"])
+        api_secret = str(js_cred["secret"])
+        self._bittrex = bittrex.Bittrex(api_key, api_secret)
+
+        currencies = self._bittrex.get_currencies()
+        self._symbols = [item["Currency"] for item in currencies["result"]]
+
+        mkts = self._bittrex.get_markets()["result"]
+        self._base_symbols = list(set([item["BaseCurrency"] for item in mkts]))
+
+        self._price_map = {}
+
+
+    def _get_price(self, market):
+        if not market in self._price_map or time.time() - self._price_map[market][1] > 60:
+            ticker = self._bittrex.get_ticker(market)["result"]
+            if not ticker:
+                raise PriceSourceError("No such market %s" % market)
+            price = float(ticker["Last"])
+            self._price_map[market] = (price, time.time())
+            return price
+        else:
+            return self._price_map[market][0]
+ 
+
+    def get_symbols(self):
+        """
+        Returns list of asset/currency symbols tradable at this exchange.
+        """
+        return self._symbols
+
+
+    def get_base_symbols(self):
+        """
+        Returns list of base currency symbols used. For instance, in the
+        trade pair XBT/USD, the base symbol is USD.
+        """
+        return self._base_symbols
+
+
+    def get_price(self, from_asset, to_asset, amount=1.0):
+        """
+        Returns how much of to_asset you would have after exchanging it
+        for amount of from_asset based on the last price traded here.
+        """
+        symbols = self.get_symbols()
+        from_asset = from_asset.upper()
+        to_asset = to_asset.upper()
+        if not from_asset in symbols:
+            raise PriceSourceError("No such symbol %s" % from_asset)
+        if not to_asset in symbols:
+            raise PriceSourceError("No such symbol %s" % to_asset)
+        
+        if from_asset == to_asset:
+            return amount
+
+        inverse = False
+        mkt = to_asset + "-" + from_asset
+        try:
+            price = self._get_price(mkt)
+        except PriceSourceError:
+            inverse = True
+            mkt = from_asset + "-" + to_asset
+            price = self._get_price(mkt)
+
+        if inverse:
+            try:
+                price = 1.0/price
+            except ZeroDivisionError:
+                pass
+        return price * amount
+
+
+class Conversions(PriceSource):
     """
     Contains mappings and conversions between symbols such as
     mNXT <-> NXT, XBT <-> BTC, etc.
     """
 
     def __init__(self):
-        super(Synthetic, self).__init__()
+        super(Conversions, self).__init__()
         self._mapping = {
             "XBT/BTC": 1.0,
             "mNHZ/NHZ": 1000.0,
@@ -362,12 +442,15 @@ class AllSources(PriceSource):
     """
 
     def __init__(self):
+        super(AllSources, self).__init__()
+
         # handles to price sources
         self._sources = {
             "bitfinex.com": Bitfinex(),
+            "bittrex.com": Bittrex(),
             "poloniex.com": Poloniex(),
             "cryptoassetcharts.info": CryptoAssetCharts(),
-            "synthetic": Synthetic(),
+            "conversions": Conversions(),
         }
 
 
@@ -395,7 +478,7 @@ class AllSources(PriceSource):
 
     def get_price(self, from_asset, to_asset, amount = 1.0):
         """
-        Returns price detemrined as an average across all sources.
+        Returns price detemrined as an average across all known sources.
         """
         prices = []
         for source_name, source in self._sources.iteritems():
