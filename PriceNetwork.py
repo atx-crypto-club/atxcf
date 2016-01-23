@@ -11,7 +11,7 @@ import PriceSource
 import string
 
 
-class PriceNetworkError(RuntimeError):
+class PriceNetworkError(PriceSource.PriceSourceError):
     pass
 
 
@@ -29,21 +29,31 @@ class PriceNetwork(PriceSource.AllSources):
         # an exchange exists between them.
         G = nx.Graph()
         G.add_nodes_from(all_symbols)
+        all_markets = self.get_markets()
+        bad_markets = []
+        for mkt_pair_str in all_markets:
+            mkt_pair = mkt_pair_str.split("/")
+            try:
+                last_price = super(PriceNetwork, self).get_price(mkt_pair[0], mkt_pair[1])
+            except PriceSource.PriceSourceError:
+                bad_markets.append(mkt_pair_str)
+            print "Adding edge", mkt_pair[0], mkt_pair[1], last_price
+            G.add_edge(mkt_pair[0], mkt_pair[1], last_price = last_price)
 
-        for base in self.get_base_symbols():
-            for counter in all_symbols:
-                try:
-                    last_price = super(PriceNetwork, self).get_price(base, counter)
-                    print "Adding edge", base, counter, last_price
-                    G.add_edge(base, counter, last_price = last_price)
-                except:
-                    pass
-
-        # conversions available
+        # Conversions available
         conv = []
         for item in G.edges_iter():
             conv.append("{0}/{1}".format(item[0], item[1]))
-        print "Available conversions: ", conv
+        print "Known markets:", conv
+        print "Number of markets:", len(conv)
+        print "Number of symbols:", len(all_symbols)
+
+        # There may have been errors retriving market info for some markets listed
+        # as available. Let's print them out here.
+        bd_mkts = []
+        for mkt in bad_markets:
+            bd_mkts.append(mkt)
+        print "Dropped markets due to errors getting last price: ", bd_mkts
         
         self._price_graph = G
 

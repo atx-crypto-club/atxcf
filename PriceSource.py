@@ -44,6 +44,12 @@ class PriceSource(object):
         """
         raise NotImplementedError("get_base_symbols not implemented!")
 
+    def get_markets(self):
+        """
+        Returns a list of market pairs seen by this source.
+        """
+        raise NotImplementedError("get_markets not implemented!")
+
     def get_price(self, from_asset, to_asset, amount=1.0):
         """
         Returns how much of to_asset you would have after exchanging it
@@ -77,6 +83,13 @@ class Bitfinex(PriceSource):
         List of base currencies
         """
         return ["USD", "BTC"]
+
+
+    def get_markets(self):
+        """
+        List of market pairs at Bifinex.
+        """
+        return [i.upper()[:3] + '/' + i.upper()[3:] for i in self.bfx_symbols]
 
 
     def get_price(self, from_asset, to_asset, amount=1.0):
@@ -129,10 +142,11 @@ class Poloniex(PriceSource):
 
 
     def _update_ticker(self):
-        # update ticker if it is older than 60 seconds.
-        if time.time() - self._pol_ticker_ts > 60:
-            self._pol_ticker = self._pol.returnTicker()
-            self._pol_ticker_ts = time.time()
+        with self._lock:
+            # update ticker if it is older than 60 seconds.
+            if time.time() - self._pol_ticker_ts > 60:
+                self._pol_ticker = self._pol.returnTicker()
+                self._pol_ticker_ts = time.time()
 
 
     def get_symbols(self):
@@ -157,6 +171,18 @@ class Poloniex(PriceSource):
                 items = cur.split("_")
                 symbol_set.add(items[0]) # the first item is the base currency
         return list(symbol_set)
+
+
+    def get_markets(self):
+        """
+        List of all trade pairs
+        """
+        mkts = []
+        with self._lock:
+            for cur in self._pol_ticker.iterkeys():
+                pair = cur.split("_")
+                mkts.append(pair[1] + "/" + pair[0])
+        return mkts
 
 
     def get_price(self, from_asset, to_asset, amount = 1.0):
@@ -245,7 +271,6 @@ class CryptoAssetCharts(PriceSource):
         """
         List all asset symbols at the site.
         """
-
         # Prefix asset symbols with _ so they don't collide with other real symbol names.
         return ['_'+s for s in self._asset_symbols] + self.get_base_symbols()
 
@@ -256,6 +281,13 @@ class CryptoAssetCharts(PriceSource):
         """
         return list(self._base_symbols)
 
+
+    def get_markets(self):
+        """
+        List all markets known by CryptoAssetCharts
+        """
+        return list(self._price_map.iterkeys())
+ 
 
     def get_price(self, from_asset, to_asset, amount = 1.0):
         """
@@ -304,8 +336,8 @@ class Bittrex(PriceSource):
         currencies = self._bittrex.get_currencies()
         self._symbols = [item["Currency"] for item in currencies["result"]]
 
-        mkts = self._bittrex.get_markets()["result"]
-        self._base_symbols = list(set([item["BaseCurrency"] for item in mkts]))
+        self._markets = self._bittrex.get_markets()["result"]
+        self._base_symbols = list(set([item["BaseCurrency"] for item in self._markets]))
 
         self._price_map = {}
 
@@ -315,6 +347,8 @@ class Bittrex(PriceSource):
             ticker = self._bittrex.get_ticker(market)["result"]
             if not ticker:
                 raise PriceSourceError("No such market %s" % market)
+            if ticker["Last"] == None:
+                raise PriceSourceError("Market unavailable")
             price = float(ticker["Last"])
             self._price_map[market] = (price, time.time())
             return price
@@ -335,6 +369,13 @@ class Bittrex(PriceSource):
         trade pair XBT/USD, the base symbol is USD.
         """
         return self._base_symbols
+
+
+    def get_markets(self):
+        """
+        Returns all markets at bittrex
+        """
+        return [str(c["MarketCurrency"]+"/"+c["BaseCurrency"]) for c in self._markets]
 
 
     def get_price(self, from_asset, to_asset, amount=1.0):
@@ -403,6 +444,13 @@ class Conversions(PriceSource):
             symbol = key.split("/")
             symbols.add(symbol[1])
         return list(symbols)
+
+
+    def get_markets(self):
+        """
+        Returns list of conversions supported as if they were markets themselves.
+        """
+        return [mkt for mkt in self._mapping.iterkeys()]
 
 
     def get_price(self, from_asset, to_asset, amount = 1.0):
@@ -474,6 +522,17 @@ class AllSources(PriceSource):
             for symbol in source.get_base_symbols():
                 symbols.add(symbol)
         return list(symbols)
+
+
+    def get_markets(self):
+        """
+        Returns all markets known by all of the price sources.
+        """
+        mkts = set()
+        for source in self._sources.itervalues():
+            for mkt in source.get_markets():
+                mkts.add(mkt)
+        return list(mkts)
 
 
     def get_price(self, from_asset, to_asset, amount = 1.0):

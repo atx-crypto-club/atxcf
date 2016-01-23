@@ -44,6 +44,12 @@ def get_price(message, value, trade_pair_str):
     message.reply(r_msg)
 
 
+@respond_to('get_markets')
+def get_markets(message):
+    mkts = _pn.get_markets()
+    message.reply(" ".join(sorted(mkts)))
+
+
 #@respond_to("run_shell (.*)")
 #def run_shell(message, cmd):
 #    print "Executing: %s" % cmd

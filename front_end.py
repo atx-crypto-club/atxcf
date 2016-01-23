@@ -38,5 +38,11 @@ def get_price(from_asset, to_asset, value):
     return str(price)
 
 
+@app.route('/get_markets')
+def get_markets():
+    mkts = _pn.get_markets()
+    return " ".join(sorted(mkts))
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=1337)
