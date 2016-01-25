@@ -5,6 +5,7 @@ atxcf agent slack/flask bot
 module deps:
 slackbot
 flask
+flask-cors
 pyquery
 networkx
 krakenex

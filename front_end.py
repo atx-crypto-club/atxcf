@@ -1,9 +1,12 @@
 from flask import Flask
+from flask.ext.cors import CORS
+#from flask import jsonify
 
 import prices
 import PriceNetwork
 
 app = Flask(__name__)
+CORS(app)
 _pn = PriceNetwork.PriceNetwork()
 
 
