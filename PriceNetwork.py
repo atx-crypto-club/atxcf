@@ -64,6 +64,11 @@ class PriceNetwork(PriceSource.AllSources):
 
 
     def get_price(self, from_asset, to_asset, value = 1.0):
+        
+        # do nothing if they're the same
+        if from_asset == to_asset:
+            return value
+
         G = self._price_graph
         sh_p = nx.shortest_path(G, from_asset, to_asset)
         if not sh_p or len(sh_p) <= 1:
