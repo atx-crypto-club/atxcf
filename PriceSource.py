@@ -134,7 +134,11 @@ class Bitfinex(PriceSource):
             if not bfx_symbol in self.bfx_symbols:
                 raise PriceSourceError("Missing market")
 
-        price = float(self.bfx.ticker(bfx_symbol)["last_price"])
+        try:
+            price = float(self.bfx.ticker(bfx_symbol)["last_price"])
+        except requests.exceptions.ReadTimeout:
+            raise PriceSourceError("Error getting last_price: ReadTimeout")
+
         if inverse:
             try:
                 price = 1.0/price
