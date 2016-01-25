@@ -7,3 +7,5 @@ slackbot
 flask
 pyquery
 networkx
+krakenex
+coinmarketcap

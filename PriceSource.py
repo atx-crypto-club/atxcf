@@ -7,6 +7,7 @@ and add an instance of it to the _sources dict.
 import bitfinex
 import poloniex
 import bittrex
+# import coinmarketcap
 
 import requests
 import re
@@ -58,6 +59,26 @@ class PriceSource(object):
         raise NotImplementedError("get_price not implemented!")
 
 
+    def check_symbol(self, asset_symbol, uppercase=True):
+        """
+        Check if this price source knows something about the specified symbol.
+        Throws an error if not.
+        """
+        symbols = self.get_symbols()
+        if uppercase:
+            asset_symbol = asset_symbol.upper()
+        if not asset_symbol in symbols:
+            raise PriceSourceError("No such symbol %s" % asset_symbol)
+
+
+    def check_symbols(self, asset_symbols, uppercase=True):
+        """
+        Checks if we handle all the symbols in the collection.
+        """
+        for asset_symbol in asset_symbols:
+            self.check_symbol(asset_symbol, uppercase)
+
+
 class Bitfinex(PriceSource):
     """
     Bitfinex exchange interface for atxcf-bot
@@ -97,13 +118,7 @@ class Bitfinex(PriceSource):
         Returns how much of to_asset you would have after exchanging it
         for amount of from_asset based on the last price traded here.        
         """
-        symbols = self.get_symbols()
-        from_asset = from_asset.upper()
-        to_asset = to_asset.upper()
-        if not from_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % from_asset)
-        if not to_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % to_asset)
+        self.check_symbols((from_asset, to_asset))
 
         if from_asset == to_asset:
             return amount
@@ -190,18 +205,14 @@ class Poloniex(PriceSource):
         Returns how much of from_asset you would have after exchanging it
         for the amount of from_asset based on the last price traded here.
         """
-        symbols = self.get_symbols()
-        from_asset = from_asset.upper()
-        to_asset = to_asset.upper()
-        if not from_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % from_asset)
-        if not to_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % to_asset)
+        self.check_symbols((from_asset, to_asset))
         
         if from_asset == to_asset:
             return amount
 
         inverse = False
+        from_asset = from_asset.upper()
+        to_asset = to_asset.upper()
         pol_symbol = to_asset + "_" + from_asset
         with self._lock:
             if not pol_symbol in self._pol_ticker.iterkeys():
@@ -293,11 +304,7 @@ class CryptoAssetCharts(PriceSource):
         """
         Returns the price as reflected in the price map
         """
-        symbols = self.get_symbols()
-        if not from_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % from_asset)
-        if not to_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % to_asset)
+        self.check_symbols((from_asset, to_asset), False)
 
         # nothing to do here
         if from_asset == to_asset:
@@ -383,18 +390,14 @@ class Bittrex(PriceSource):
         Returns how much of to_asset you would have after exchanging it
         for amount of from_asset based on the last price traded here.
         """
-        symbols = self.get_symbols()
-        from_asset = from_asset.upper()
-        to_asset = to_asset.upper()
-        if not from_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % from_asset)
-        if not to_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % to_asset)
+        self.check_symbols((from_asset, to_asset))
         
         if from_asset == to_asset:
             return amount
 
         inverse = False
+        from_asset = from_asset.upper()
+        to_asset = to_asset.upper()
         mkt = to_asset + "-" + from_asset
         try:
             price = self._get_price(mkt)
@@ -419,13 +422,23 @@ class Conversions(PriceSource):
 
     def __init__(self):
         super(Conversions, self).__init__()
+
+        def test0xbt_func():
+            return 0.31337
+
+        def test1test0_func():
+            return 1337
+
         self._mapping = {
             "XBT/BTC": 1.0,
             "mNHZ/NHZ": 1000.0,
             "mNXT/NXT": 1000.0,
             "sat/BTC": 100000000,
             "_Coinomat1/Coinomat1": 1.0,
-            "_MMNXT/MMNXT": 1.0
+            "_MMNXT/MMNXT": 1.0,
+            "XDG/DOGE": 1.0,
+            "TEST0/XBT": test0xbt_func,
+            "TEST1/TEST0": test1test0_func
         }
 
 
@@ -450,18 +463,14 @@ class Conversions(PriceSource):
         """
         Returns list of conversions supported as if they were markets themselves.
         """
-        return [mkt for mkt in self._mapping.iterkeys()]
+        return list(self._mapping.iterkeys())
 
 
     def get_price(self, from_asset, to_asset, amount = 1.0):
         """
         Uses the mapping to convert from_asset to to_asset.
         """
-        symbols = self.get_symbols()
-        if not from_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % from_asset)
-        if not to_asset in symbols:
-            raise PriceSourceError("No such symbol %s" % to_asset)
+        self.check_symbols((from_asset, to_asset), False)
 
         # nothing to do here
         if from_asset == to_asset:
@@ -476,6 +485,9 @@ class Conversions(PriceSource):
                 raise PriceSourceError("Missing market")
 
         price = self._mapping[trade_pair_str]
+        if hasattr(price, '__call__'):
+            price = price()
+        price = float(price)
         if inverse:
             try:
                 price = 1.0/price
