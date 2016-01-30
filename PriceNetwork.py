@@ -9,6 +9,8 @@ import networkx as nx
 import PriceSource
 
 import string
+import threading
+import multiprocessing
 
 
 class PriceNetworkError(PriceSource.PriceSourceError):
@@ -19,8 +21,27 @@ class PriceNetwork(PriceSource.AllSources):
 
     def __init__(self):
         super(PriceNetwork, self).__init__()
-        self._generate_graph()
+        self._price_graph = self._generate_graph()
 
+        # Contains symbols who's values are determined by a basket of assets.
+        # They don't represent real market prices, instead it is a NAV calculation.
+        catx_test0 = {
+            "XBT": 1.0,
+            "LTC": 10.0,
+            "XDG": 10000.0
+        }
+        catx_test1 = {
+            "DASH": 10.0,
+            "FCT": 100.0,
+            "NXT": 100000.0
+        }
+        self._baskets = {
+            "CATX_test0": catx_test0,
+            "CATX_test1": catx_test1
+        }
+
+        self._base_currencies = ["XBT", "USD"]
+        
 
     def _generate_graph(self):
         all_symbols = self.get_symbols()
@@ -31,18 +52,32 @@ class PriceNetwork(PriceSource.AllSources):
         G.add_nodes_from(all_symbols)
         all_markets = self.get_markets()
         bad_markets = []
-        for mkt_pair_str in all_markets:
+        good_markets = []
+
+        def get_mkt_price(mkt_pair_str):
             mkt_pair = mkt_pair_str.split("/")
             try:
                 last_price = super(PriceNetwork, self).get_price(mkt_pair[0], mkt_pair[1])
+                print "Adding market", mkt_pair[0], mkt_pair[1], last_price
+                return (mkt_pair[0], mkt_pair[1], last_price)
             except PriceSource.PriceSourceError:
-                bad_markets.append(mkt_pair_str)
-            print "Adding edge", mkt_pair[0], mkt_pair[1], last_price
-            G.add_edge(mkt_pair[0], mkt_pair[1], last_price = last_price)
+                return (mkt_pair[0], mkt_pair[1], None)
+
+        print "Polling known markets..."
+        # multiproccessing isn't working... some pickling error
+        #pool = multiprocessing.Pool()
+        #all_market_prices = pool.map(get_mkt_price, all_markets, 32)
+        all_market_prices = map(get_mkt_price, all_markets)
+        for from_mkt, to_mkt, last_price in all_market_prices:
+            if last_price == None:
+                bad_markets.append("{0}/{1}".format(from_mkt, to_mkt))
+            else:
+                G.add_edge(from_mkt, to_mkt, last_price = last_price)
+                good_markets.append((from_mkt, to_mkt, last_price))
 
         # Conversions available
         conv = []
-        for item in G.edges_iter():
+        for item in good_markets:
             conv.append("{0}/{1}".format(item[0], item[1]))
         print "Known markets:", conv
         print "Number of markets:", len(conv)
@@ -50,17 +85,22 @@ class PriceNetwork(PriceSource.AllSources):
 
         # There may have been errors retriving market info for some markets listed
         # as available. Let's print them out here.
-        bd_mkts = []
-        for mkt in bad_markets:
-            bd_mkts.append(mkt)
-        print "Dropped markets due to errors getting last price: ", bd_mkts
+        print "Dropped markets due to errors getting last price: ", bad_markets
         
-        self._price_graph = G
+        return G
+
+
+    def _get_price_graph(self):
+        with self._lock:
+            if self._price_graph == None:
+                self._price_graph = self._generate_graph()
+            return self._price_graph
 
 
     def set_source(self, sourcename, source):
-        self._sources[sourcename] = source
-        self._generate_graph() # TODO: just add new edges
+        with self._lock:
+            self._sources[sourcename] = source
+            self._price_graph = None # TODO: just add new edges
 
 
     def get_price(self, from_asset, to_asset, value = 1.0):
@@ -69,7 +109,7 @@ class PriceNetwork(PriceSource.AllSources):
         if from_asset == to_asset:
             return value
 
-        G = self._price_graph
+        G = self._get_price_graph()
         sh_p = nx.shortest_path(G, from_asset, to_asset)
         if not sh_p or len(sh_p) <= 1:
             raise PriceNetworkError("No path from {0} to {1}"
