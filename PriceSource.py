@@ -359,9 +359,15 @@ class Bittrex(PriceSource):
         api_key = str(js_cred["key"])
         api_secret = str(js_cred["secret"])
         self._bittrex = bittrex.Bittrex(api_key, api_secret)
-        currencies = self._bittrex.get_currencies()
+        try:
+            currencies = self._bittrex.get_currencies()
+        except:
+            raise PriceSourceError("Failed to get currency list from Bittrex")
         self._symbols = [item["Currency"] for item in currencies["result"]]
-        self._markets = self._bittrex.get_markets()["result"]
+        try:
+            self._markets = self._bittrex.get_markets()["result"]
+        except:
+            raise PriceSourceError("Failed to get markets from Bittrex")
         self._base_symbols = list(set([item["BaseCurrency"] for item in self._markets]))
         self._price_map = {}
         self._lock = threading.RLock()
