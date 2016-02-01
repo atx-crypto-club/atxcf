@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{a90b0561-52ad-49c5-8c44-fa63630e67ed}</ProjectGuid>
     <ProjectHome />
-    <StartupFile>front_end.py</StartupFile>
+    <StartupFile>webapi.py</StartupFile>
     <SearchPath />
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
@@ -24,7 +24,7 @@
     <Compile Include="agent.py" />
     <Compile Include="bitfinex.py" />
     <Compile Include="bittrex.py" />
-    <Compile Include="front_end.py" />
+    <Compile Include="webapi.py" />
     <Compile Include="poloniex.py" />
     <Compile Include="PriceNetwork.py" />
     <Compile Include="prices.py" />
