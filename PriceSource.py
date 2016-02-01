@@ -163,7 +163,10 @@ class Poloniex(PriceSource):
     def __init__(self, creds = "poloniex_cred.json"):
         super(Poloniex, self).__init__()
         self._pol = poloniex.poloniex(creds)
-        self._pol_ticker = self._pol.returnTicker()
+        try:
+            self._pol_ticker = self._pol.returnTicker()
+        except:
+            raise PriceSourceError("Error getting Poloniex ticker")
         self._pol_ticker_ts = time.time()
         self._lock = threading.RLock()
 
@@ -255,7 +258,10 @@ class CryptoAssetCharts(PriceSource):
         self._asset_symbols = set()
         self._base_symbols = set()
         self._price_map = {}
-        self._response = requests.get(self._req_url)
+        try:
+            self._response = requests.get(self._req_url)
+        except:
+            raise PriceSourceError("Error getting cryptoassetcharts.info")
         self._response_ts = time.time()
         self._lock = threading.RLock()
 
@@ -362,12 +368,12 @@ class Bittrex(PriceSource):
         try:
             currencies = self._bittrex.get_currencies()
         except:
-            raise PriceSourceError("Failed to get currency list from Bittrex")
+            raise PriceSourceError("Error getting currency list from Bittrex")
         self._symbols = [item["Currency"] for item in currencies["result"]]
         try:
             self._markets = self._bittrex.get_markets()["result"]
         except:
-            raise PriceSourceError("Failed to get markets from Bittrex")
+            raise PriceSourceError("Error getting markets from Bittrex")
         self._base_symbols = list(set([item["BaseCurrency"] for item in self._markets]))
         self._price_map = {}
         self._lock = threading.RLock()
@@ -440,6 +446,14 @@ class Bittrex(PriceSource):
             except ZeroDivisionError:
                 pass
         return price * amount
+
+
+class ProxySource(PriceSource):
+    """
+    Gets price info from a price source web API.
+    TODO: finish!
+    """
+    pass
 
 
 class Conversions(PriceSource):
@@ -539,17 +553,25 @@ class AllSources(PriceSource):
 
     def __init__(self):
         super(AllSources, self).__init__()
+        self._lock = threading.RLock()
 
         # handles to price sources
-        self._sources = {
-            "bitfinex.com": Bitfinex(),
-            "bittrex.com": Bittrex(),
-            "poloniex.com": Poloniex(),
-            "cryptoassetcharts.info": CryptoAssetCharts(),
-            "conversions": Conversions(),
-        }
+        self._sources = {}
 
-        self._lock = threading.RLock()
+        # Populate the sources dict
+        errors = []
+        def add_source(srcname, srcclassobj, sources, errors):
+            try:
+                sources[srcname] = srcclassobj()
+            except PriceSourceError as e:
+                errors.append(e.message)
+
+        src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
+        for src_class in src_classes:
+            add_source(src_class.__name__, src_class, self._sources, errors)
+
+        if len(errors) > 0:
+            print "AllSources errors:", errors
 
 
     def get_symbols(self):
