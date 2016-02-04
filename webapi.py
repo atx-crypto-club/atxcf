@@ -1,3 +1,5 @@
+import argparse
+
 from flask import Flask
 from flask.ext.cors import CORS
 #from flask import jsonify
@@ -5,14 +7,23 @@ from flask.ext.cors import CORS
 import prices
 import PriceNetwork
 
+class ProxySource(PriceNetwork.PriceNetwork):
+    """
+    Gets price info from a price source web API.
+    TODO: finish!
+    """
+    pass
+
+
 app = Flask(__name__)
 CORS(app)
-_pn = PriceNetwork.PriceNetwork()
+_source = None
 
 
 @app.route('/')
 def index():
     return '~~ atxcf-bot ~~'
+
 
 @app.route('/prices')
 @app.route('/get_fund_asset_prices')
@@ -30,22 +41,33 @@ def get_fund_asset_prices():
 
 @app.route('/get_symbols')
 def get_symbols():
-    symbols = _pn.get_symbols()
+    if _source == None:
+        raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
+    symbols = _source.get_symbols()
     return " ".join(sorted(symbols))
 
 
 @app.route('/get_price/<from_asset>/<to_asset>', defaults={'value': 1.0})
 @app.route('/get_price/<from_asset>/<to_asset>/<value>')
 def get_price(from_asset, to_asset, value):
-    price = _pn.get_price(from_asset, to_asset, value)
+    if _source == None:
+        raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
+    price = _source.get_price(from_asset, to_asset, value)
     return str(price)
 
 
 @app.route('/get_markets')
 def get_markets():
-    mkts = _pn.get_markets()
+    if _source == None:
+        raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
+    mkts = _source.get_markets()
     return " ".join(sorted(mkts))
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description="Launches atxcf price API",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    _source = PriceNetwork.PriceNetwork()
     app.run(host='0.0.0.0', port=1337, threaded=True)

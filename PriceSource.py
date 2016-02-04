@@ -448,14 +448,6 @@ class Bittrex(PriceSource):
         return price * amount
 
 
-class ProxySource(PriceSource):
-    """
-    Gets price info from a price source web API.
-    TODO: finish!
-    """
-    pass
-
-
 class Conversions(PriceSource):
     """
     Contains mappings and conversions between symbols such as
