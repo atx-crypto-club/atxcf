@@ -27,7 +27,6 @@
     <Compile Include="webapi.py" />
     <Compile Include="poloniex.py" />
     <Compile Include="PriceNetwork.py" />
-    <Compile Include="prices.py" />
     <Compile Include="PriceSource.py" />
   </ItemGroup>
   <ItemGroup>
