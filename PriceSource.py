@@ -18,6 +18,7 @@ import json
 import math
 import time
 import threading
+import os
 
 import locale
 locale.setlocale(locale.LC_ALL, '')
@@ -25,6 +26,26 @@ locale.setlocale(locale.LC_ALL, '')
 
 class PriceSourceError(RuntimeError):
     pass
+
+_js_cred = None
+def get_creds(site):
+    global _js_cred
+    if _js_cred == None:
+        creds = "creds.json" # default creds file
+        # override default with ATXCF_CREDS environment variable
+        if "ATXCF_CREDS" in os.environ:
+            creds = os.environ["ATXCF_CREDS"]
+        try:
+            _js_cred = json.load(open(creds))
+        except IOError as e:
+            raise PriceSourceError("Error loading credentials from '{0}': '{1}'".format(creds, e.message()))
+
+    if site not in _js_cred:
+        raise PriceSourceError("No such site '{0}' among credentials loaded".format(site))
+
+    api_key = str(_js_cred[site]["key"])
+    api_secret = str(_js_cred[site]["secret"])
+    return (api_key, api_secret)
 
 
 class PriceSource(object):
@@ -160,9 +181,10 @@ class Poloniex(PriceSource):
     Poloniex exchange interface for atxcf-bot
     """
 
-    def __init__(self, creds = "poloniex_cred.json"):
+    def __init__(self):
         super(Poloniex, self).__init__()
-        self._pol = poloniex.poloniex(creds)
+        api_key, api_secret = get_creds("poloniex.com")
+        self._pol = poloniex.poloniex(api_key, api_secret)
         try:
             self._pol_ticker = self._pol.returnTicker()
         except:
@@ -359,11 +381,9 @@ class Bittrex(PriceSource):
     Using bittrex as an asset price source.
     """
 
-    def __init__(self, creds = "bittrex_cred.json"):
+    def __init__(self):
         super(Bittrex, self).__init__()
-        js_cred = json.load(open(creds))
-        api_key = str(js_cred["key"])
-        api_secret = str(js_cred["secret"])
+        api_key, api_secret = get_creds("bittrex.com")
         self._bittrex = bittrex.Bittrex(api_key, api_secret)
         try:
             currencies = self._bittrex.get_currencies()

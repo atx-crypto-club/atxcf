@@ -8,33 +8,18 @@ transfix@sublevels.net
 import urllib
 import urllib2
 import json
-#import gspread
-#from oauth2client.client import OAuth2Credentials
 import time
 import hmac,hashlib
 import requests
 
-"""
-def gspread_test():
-    json_key = json.load(open('client_secret.json'))['installed']
-    scope = ['https://spreadsheets.google.com/feeds']
-
-    credentials = OAuth2Credentials.from_json(json_key)
-
-    gc = gspread.authorize(credentials)
-
-    sh = gc.open("crypto atx accounts")
-    print sh.worksheets()
-"""
 
 def createTimeStamp(datestr, format="%Y-%m-%d %H:%M:%S"):
     return time.mktime(time.strptime(datestr, format))
 
 class poloniex:
-    def __init__(self, json_cred_file):
-        js_cred = json.load(open(json_cred_file))
-        self.APIKey = str(js_cred["key"])
-        self.Secret = str(js_cred["secret"])
+    def __init__(self, api_key, api_secret):
+        self.APIKey = api_key
+        self.Secret = api_secret
 
     def post_process(self, before):
         after = before
