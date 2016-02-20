@@ -316,7 +316,7 @@ class CryptoAssetCharts(PriceSource):
                 base_symbol = price_str_comp[1]
                 self._base_symbols.add(base_symbol)
             
-                price_val = locale.atof(price_str_comp[0])
+                price_val = locale.atof(price_str_comp[0].replace(',', ''))
                 self._price_map["_"+asset_symbol+"/"+base_symbol] = price_val
         
 
