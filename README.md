@@ -10,8 +10,8 @@ Module deps:
   - flask-cors
   - pyquery
   - networkx
+  - coinmarketcap
   - krakenex (optional for now)
-  - coinmarketcap (optional for now)
 
 This thing is a work in progress and has known issues like being slow and crashy especially after a storm of get_price requests (like in the web API case). I usually run it with the following script:
 

@@ -7,6 +7,8 @@ from flask.ext.cors import CORS
 import prices
 import PriceNetwork
 
+import coinmarketcap
+
 class ProxySource(PriceNetwork.PriceNetwork):
     """
     Gets price info from a price source web API.
@@ -62,6 +64,13 @@ def get_markets():
         raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
     mkts = _source.get_markets()
     return " ".join(sorted(mkts))
+
+
+@app.route('/get_top_coins', defaults={'top': 10})
+@app.route('/get_top_coins/<top>')
+def get_top_coins(top):
+    top_symbols = [coinmarketcap.short(name.lower()) for name in coinmarketcap.top(int(top))]
+    return " ".join(top_symbols)
 
 
 if __name__ == '__main__':

@@ -8,6 +8,8 @@ import string
 import prices
 import PriceNetwork
 
+import coinmarketcap # for top marketcap coins and stats
+
 @respond_to('hi', re.IGNORECASE)
 def hi(message):
     message.reply('Hello, World!')
@@ -48,6 +50,13 @@ def get_price(message, value, trade_pair_str):
 def get_markets(message):
     mkts = _pn.get_markets()
     message.reply(" ".join(sorted(mkts)))
+
+
+@respond_to('get_top_coins$', re.IGNORECASE)
+@respond_to('get_top_coins (.*)', re.IGNORECASE)
+def get_top_coins(message, top=10):
+    top_symbols = [coinmarketcap.short(name.lower()) for name in coinmarketcap.top(int(top))]
+    message.reply(" ".join(top_symbols))
 
 
 #@respond_to("run_shell (.*)")
