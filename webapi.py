@@ -4,7 +4,6 @@ from flask import Flask
 from flask.ext.cors import CORS
 #from flask import jsonify
 
-import prices
 import PriceNetwork
 
 import coinmarketcap
@@ -25,20 +24,6 @@ _source = None
 @app.route('/')
 def index():
     return '~~ atxcf-bot ~~'
-
-
-@app.route('/prices')
-@app.route('/get_fund_asset_prices')
-def get_fund_asset_prices():
-    price_d = prices.get_fund_asset_prices()
-    output = "<p>"
-    for key, val in price_d.iteritems():
-        if isinstance(val, str):
-            output += "{0}: {1}<br />".format(key, val)
-        else:
-            output += "{0}: {1:.8f}<br />".format(key, val)
-    output += "</p>"
-    return output
 
 
 @app.route('/get_symbols')

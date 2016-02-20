@@ -5,7 +5,6 @@ from subprocess import check_output, CalledProcessError, STDOUT
 import re
 import string
 
-import prices
 import PriceNetwork
 
 import coinmarketcap # for top marketcap coins and stats
@@ -15,12 +14,9 @@ def hi(message):
     message.reply('Hello, World!')
 
 
-@respond_to('get_prices')
-def get_prices(message):
-    # Message is replied to the sender (prefixed with @user)
-    p = prices.get_fund_asset_prices()
-    message.reply(str(p))
-    print p
+@respond_to('about', re.IGNORECASE)
+def hi(message):
+    message.reply('~~~ atxcf agent bot ~~~')
 
 
 _pn = PriceNetwork.PriceNetwork()
