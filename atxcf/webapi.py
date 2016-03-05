@@ -58,10 +58,15 @@ def get_top_coins(top):
     return " ".join(top_symbols)
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(
         description="Launches atxcf price API",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     _source = PriceNetwork.PriceNetwork()
     app.run(host='0.0.0.0', port=1337, threaded=True)
+
+
+if __name__ == '__main__':
+    main()
+

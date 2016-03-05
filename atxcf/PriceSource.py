@@ -38,7 +38,7 @@ def get_creds(site):
         try:
             _js_cred = json.load(open(creds))
         except IOError as e:
-            raise PriceSourceError("Error loading credentials from '{0}': '{1}'".format(creds, e.message()))
+            raise PriceSourceError("Error loading credentials from '{0}': '{1}'".format(creds, e.message))
 
     if site not in _js_cred:
         raise PriceSourceError("No such site '{0}' among credentials loaded".format(site))
@@ -57,27 +57,27 @@ class PriceSource(object):
         """
         Returns list of asset/currency symbols tradable at this exchange.
         """
-        raise NotImplementedError("get_symbols not implemented!")
+        raise NotImplementedError("%s: get_symbols not implemented!" % self._class_name())
 
     def get_base_symbols(self):
         """
         Returns list of base currency symbols used. For instance, in the
         trade pair XBT/USD, the base symbol is USD.
         """
-        raise NotImplementedError("get_base_symbols not implemented!")
+        raise NotImplementedError("%s: get_base_symbols not implemented!" % self._class_name())
 
     def get_markets(self):
         """
         Returns a list of market pairs seen by this source.
         """
-        raise NotImplementedError("get_markets not implemented!")
+        raise NotImplementedError("%s: get_markets not implemented!" % self._class_name())
 
     def get_price(self, from_asset, to_asset, amount=1.0):
         """
         Returns how much of to_asset you would have after exchanging it
         for amount of from_asset based on the last price traded here.
         """
-        raise NotImplementedError("get_price not implemented!")
+        raise NotImplementedError("%s: get_price not implemented!" % self._class_name())
 
 
     def check_symbol(self, asset_symbol, uppercase=True):
@@ -89,7 +89,7 @@ class PriceSource(object):
         if uppercase:
             asset_symbol = asset_symbol.upper()
         if not asset_symbol in symbols:
-            raise PriceSourceError("No such symbol %s" % asset_symbol)
+            raise PriceSourceError("%s: No such symbol %s" % (self._class_name(), asset_symbol))
 
 
     def check_symbols(self, asset_symbols, uppercase=True):
@@ -98,6 +98,10 @@ class PriceSource(object):
         """
         for asset_symbol in asset_symbols:
             self.check_symbol(asset_symbol, uppercase)
+
+
+    def _class_name(self):
+        return self.__class__.__name__
 
 
 class Bitfinex(PriceSource):
@@ -111,7 +115,7 @@ class Bitfinex(PriceSource):
         try:
             self.bfx_symbols = self.bfx.symbols()
         except:
-            raise PriceSourceError("Error getting symbols from bitfinex")
+            raise PriceSourceError("%s: Error getting symbols from bitfinex" % self._class_name())
         self._lock = threading.RLock()
     
 
@@ -161,12 +165,12 @@ class Bitfinex(PriceSource):
                 inverse = True
                 bfx_symbol = to_asset_lower + from_asset_lower
                 if not bfx_symbol in self.bfx_symbols:
-                    raise PriceSourceError("Missing market")
+                    raise PriceSourceError("%s: Missing market" % self._class_name())
 
             try:
                 price = float(self.bfx.ticker(bfx_symbol)["last_price"])
             except requests.exceptions.ReadTimeout:
-                raise PriceSourceError("Error getting last_price: requests.exceptions.ReadTimeout")
+                raise PriceSourceError("%s: Error getting last_price: requests.exceptions.ReadTimeout" % self._class_name())
 
         if inverse:
             try:
@@ -188,7 +192,7 @@ class Poloniex(PriceSource):
         try:
             self._pol_ticker = self._pol.returnTicker()
         except:
-            raise PriceSourceError("Error getting Poloniex ticker")
+            raise PriceSourceError("%s: Error getting ticker" % self._class_name())
         self._pol_ticker_ts = time.time()
         self._lock = threading.RLock()
 
@@ -256,7 +260,7 @@ class Poloniex(PriceSource):
                 inverse = True
                 pol_symbol = from_asset + "_" + to_asset
                 if not pol_symbol in self._pol_ticker.iterkeys():
-                    raise PriceSourceError("Missing market")
+                    raise PriceSourceError("%s: Missing market" % self._class_name())
 
             self._update_ticker()
             price = float(self._pol_ticker[pol_symbol]["last"])
@@ -283,7 +287,7 @@ class CryptoAssetCharts(PriceSource):
         try:
             self._response = requests.get(self._req_url)
         except:
-            raise PriceSourceError("Error getting cryptoassetcharts.info")
+            raise PriceSourceError("%s: Error getting cryptoassetcharts.info" % self._class_name())
         self._response_ts = time.time()
         self._lock = threading.RLock()
 
@@ -363,7 +367,7 @@ class CryptoAssetCharts(PriceSource):
                 inverse = True
                 trade_pair_str = from_asset + '/' + to_asset
                 if not trade_pair_str in self._price_map.iterkeys():
-                    raise PriceSourceError("Missing market")
+                    raise PriceSourceError("%s: Missing market" % self._class_name())
 
             self._update_info()
             price = self._price_map[trade_pair_str]
@@ -388,12 +392,12 @@ class Bittrex(PriceSource):
         try:
             currencies = self._bittrex.get_currencies()
         except:
-            raise PriceSourceError("Error getting currency list from Bittrex")
+            raise PriceSourceError("%s: Error getting currency list" % self._class_name())
         self._symbols = [item["Currency"] for item in currencies["result"]]
         try:
             self._markets = self._bittrex.get_markets()["result"]
         except:
-            raise PriceSourceError("Error getting markets from Bittrex")
+            raise PriceSourceError("%s: Error getting markets" % self._class_name())
         self._base_symbols = list(set([item["BaseCurrency"] for item in self._markets]))
         self._price_map = {}
         self._lock = threading.RLock()
@@ -404,9 +408,9 @@ class Bittrex(PriceSource):
             if not market in self._price_map or time.time() - self._price_map[market][1] > 60:
                 ticker = self._bittrex.get_ticker(market)["result"]
                 if not ticker:
-                    raise PriceSourceError("No such market %s" % market)
+                    raise PriceSourceError("%s: No such market %s" % (self._class_name(), market))
                 if ticker["Last"] == None:
-                    raise PriceSourceError("Market unavailable")
+                    raise PriceSourceError("%s: Market unavailable" % self._class_name())
                 price = float(ticker["Last"])
                 self._price_map[market] = (price, time.time())
                 return price
@@ -542,7 +546,7 @@ class Conversions(PriceSource):
             inverse = True
             trade_pair_str = from_asset + '/' + to_asset
             if not trade_pair_str in self._mapping.iterkeys():
-                raise PriceSourceError("Missing market")
+                raise PriceSourceError("%s: Missing market" % self._class_name())
 
         price = 0.0
         with self._lock:
@@ -572,15 +576,16 @@ class AllSources(PriceSource):
 
         # Populate the sources dict
         errors = []
-        def add_source(srcname, srcclassobj, sources, errors):
+        def add_source(srcname, srcclassobj, sources):
             try:
                 sources[srcname] = srcclassobj()
             except PriceSourceError as e:
                 errors.append(e.message)
 
-        src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
+        #src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
+        src_classes = [Bittrex]
         for src_class in src_classes:
-            add_source(src_class.__name__, src_class, self._sources, errors)
+            add_source(src_class.__name__, src_class, self._sources)
 
         if len(errors) > 0:
             print "AllSources errors:", errors
@@ -635,5 +640,5 @@ class AllSources(PriceSource):
                 except PriceSourceError:
                     pass
         if len(prices) == 0:
-            raise PriceSourceError("Couldn't determine price")
+            raise PriceSourceError("%s: Couldn't determine price" % self._class_name())
         return math.fsum(prices)/float(len(prices))

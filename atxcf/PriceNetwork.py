@@ -19,9 +19,12 @@ class PriceNetworkError(PriceSource.PriceSourceError):
 
 class PriceNetwork(PriceSource.AllSources):
 
-    def __init__(self):
+    def __init__(self, doInitGraph=False):
         super(PriceNetwork, self).__init__()
-        self._price_graph = self._generate_graph()
+        self._price_graph = None
+
+        if doInitGraph:
+            self.init_graph()
 
         # Contains symbols who's values are determined by a basket of assets.
         # They don't represent real market prices, instead it is a NAV calculation.
@@ -93,8 +96,17 @@ class PriceNetwork(PriceSource.AllSources):
     def _get_price_graph(self):
         with self._lock:
             if self._price_graph == None:
-                self._price_graph = self._generate_graph()
+                self.init_graph()
             return self._price_graph
+
+
+    def init_graph(self):
+        """
+        (Re-)generates the price network graph and assigns it to the _price_graph
+        attrib.
+        """
+        with self._lock:
+            self._price_graph = self._generate_graph()
 
 
     def set_source(self, sourcename, source):

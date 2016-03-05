@@ -9,6 +9,18 @@ import PriceNetwork
 
 import coinmarketcap # for top marketcap coins and stats
 
+
+_pn = None
+def init():
+    _pn = PriceNetwork.PriceNetwork()
+
+
+def _get_price_network():
+    if not _pn:
+        init()
+    return _pn
+
+
 @respond_to('hi', re.IGNORECASE)
 def hi(message):
     message.reply('Hello, World!')
@@ -19,11 +31,10 @@ def hi(message):
     message.reply('~~~ atxcf agent bot ~~~')
 
 
-_pn = PriceNetwork.PriceNetwork()
-
 @respond_to('get_symbols')
 def get_symbols(message):
-    symbols = _pn.get_symbols()
+    pn = _get_price_network()
+    symbols = pn.get_symbols()
     message.reply(" ".join(sorted(symbols)))
 
 
@@ -36,7 +47,8 @@ def get_price(message, value, trade_pair_str):
         raise RuntimeError("Invalid trade_pair_str %s" % trade_pair_str)
     asset_strs = [cur.strip() for cur in asset_strs]
 
-    price = _pn.get_price(asset_strs[0], asset_strs[1], value)
+    pn = _get_price_network()
+    price = pn.get_price(asset_strs[0], asset_strs[1], value)
     r_msg = "{0} {1} for {2} {3}".format(value, asset_strs[0], 
                                          price, asset_strs[1])
     message.reply(r_msg)
@@ -44,14 +56,15 @@ def get_price(message, value, trade_pair_str):
 
 @respond_to('get_markets')
 def get_markets(message):
-    mkts = _pn.get_markets()
+    pn = _get_price_network()
+    mkts = pn.get_markets()
     message.reply(" ".join(sorted(mkts)))
 
 
 @respond_to('get_top_coins$', re.IGNORECASE)
 @respond_to('get_top_coins (.*)', re.IGNORECASE)
 def get_top_coins(message, top=10):
-    top_symbols = [coinmarketcap.short(name.lower()) for name in coinmarketcap.top(int(top))]
+    top_symbols = [coinmarketcap.short(name) for name in coinmarketcap.top(int(top))]
     message.reply(" ".join(top_symbols))
 
 
@@ -65,6 +78,7 @@ def get_top_coins(message, top=10):
 
 def main():
     bot = Bot()
+    init() # make sure the price network is available
     bot.run()
 
 
