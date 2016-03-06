@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# such atxcf bot
+#                °º¤øø| such catx agent bot, many crypto |øø¤º°
 # MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 # MMMMMMMMMMMMMMMMMMMMMMMN0OKMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 # MMMMMMMMMMMMMMMMMMMMMMW0kxd0MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWNNNWMMMMMMMMMMM
@@ -55,6 +55,13 @@ from .PriceSource import (
 
 from .PriceNetwork import (
     PriceNetwork, PriceNetworkError 
+)
+
+from .settings import (
+    get_default_options, init_settings, get_settings, set_settings,
+    reload_settings, write_settings, get_option, set_option,
+    get_options, remove_option, get_creds, set_creds, get_all_creds,
+    remove_creds, SettingsError
 )
 
 from .agent import main as start_agent
