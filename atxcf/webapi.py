@@ -63,7 +63,7 @@ def main():
         description="Launches atxcf price API",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    _source = PriceNetwork.PriceNetwork()
+    _source = PriceNetwork.PriceNetwork(True)
     app.run(host='0.0.0.0', port=1337, threaded=True)
 
 

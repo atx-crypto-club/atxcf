@@ -400,12 +400,26 @@ class Bittrex(PriceSource):
             raise PriceSourceError("%s: Error getting markets" % self._class_name())
         self._base_symbols = list(set([item["BaseCurrency"] for item in self._markets]))
         self._price_map = {}
+        self._ticker_ts = time.time()
         self._lock = threading.RLock()
+
+        self._update_price_map(True)
+
+
+    def _update_price_map(self, force=False):
+        with self._lock:
+            # update ticker if it is older than 60 seconds.
+            if force or time.time() - self._ticker_ts > 60:
+                result = self._bittrex.get_market_summaries()["result"]
+                prices = [(res["MarketName"], res["Last"]) for res in result]
+                for market, price in prices:
+                    self._price_map[market] = (price, time.time())
 
 
     def _get_price(self, market):
+        self._update_price_map()
         with self._lock:
-            if not market in self._price_map or time.time() - self._price_map[market][1] > 60:
+            if not market in self._price_map:
                 ticker = self._bittrex.get_ticker(market)["result"]
                 if not ticker:
                     raise PriceSourceError("%s: No such market %s" % (self._class_name(), market))
@@ -416,7 +430,7 @@ class Bittrex(PriceSource):
                 return price
             else:
                 return self._price_map[market][0]
- 
+
 
     def get_symbols(self):
         """
@@ -582,8 +596,7 @@ class AllSources(PriceSource):
             except PriceSourceError as e:
                 errors.append(e.message)
 
-        #src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
-        src_classes = [Bittrex]
+        src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
         for src_class in src_classes:
             add_source(src_class.__name__, src_class, self._sources)
 

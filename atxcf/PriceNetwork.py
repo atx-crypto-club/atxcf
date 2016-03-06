@@ -78,7 +78,7 @@ class PriceNetwork(PriceSource.AllSources):
                 G.add_edge(from_mkt, to_mkt, last_price = last_price)
                 good_markets.append((from_mkt, to_mkt, last_price))
 
-        # Conversions available
+        # Markets available
         conv = []
         for item in good_markets:
             conv.append("{0}/{1}".format(item[0], item[1]))
