@@ -8,6 +8,7 @@ import bitfinex
 import poloniex
 import bittrex
 # import coinmarketcap
+import settings
 
 import requests
 import re
@@ -27,25 +28,9 @@ locale.setlocale(locale.LC_ALL, '')
 class PriceSourceError(RuntimeError):
     pass
 
-_js_cred = None
+
 def get_creds(site):
-    global _js_cred
-    if _js_cred == None:
-        creds = "creds.json" # default creds file
-        # override default with ATXCF_CREDS environment variable
-        if "ATXCF_CREDS" in os.environ:
-            creds = os.environ["ATXCF_CREDS"]
-        try:
-            _js_cred = json.load(open(creds))
-        except IOError as e:
-            raise PriceSourceError("Error loading credentials from '{0}': '{1}'".format(creds, e.message))
-
-    if site not in _js_cred:
-        raise PriceSourceError("No such site '{0}' among credentials loaded".format(site))
-
-    api_key = str(_js_cred[site]["key"])
-    api_secret = str(_js_cred[site]["secret"])
-    return (api_key, api_secret)
+    return settings.get_creds(site)
 
 
 class PriceSource(object):
@@ -593,7 +578,7 @@ class AllSources(PriceSource):
         def add_source(srcname, srcclassobj, sources):
             try:
                 sources[srcname] = srcclassobj()
-            except PriceSourceError as e:
+            except RuntimeError as e:
                 errors.append(e.message)
 
         src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]

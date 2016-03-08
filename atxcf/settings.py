@@ -187,6 +187,8 @@ def get_creds(site):
     """
     settings = get_settings()
     _check_credentials_section(settings)
+    if not site in settings["credentials"]:
+        raise SettingsError("No such site %s in credentials" % site)
     key = settings["credentials"][site]["key"]
     secret = settings["credentials"][site]["secret"]
     return (key, secret)
@@ -198,8 +200,11 @@ def set_creds(site, key, secret):
     """
     settings = get_settings()
     _check_credentials_section(settings)
-    settings["credentials"][site]["key"] = str(key)
-    settings["credentials"][site]["secret"] = str(secret)
+    site_creds = {
+        "key": str(key),
+        "secret": str(secret)
+    }
+    settings["credentials"][site] = site_creds
     set_settings(settings)
 
 
@@ -209,7 +214,7 @@ def remove_creds(site):
     """
     settings = get_settings()
     _check_credentials_section(settings)
-    if not site in settings:
+    if not site in settings["credentials"]:
         raise SettingsError("No such site %s in credentials" % site)
     del settings["credentials"][site]
     set_settings(settings)
