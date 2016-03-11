@@ -16,6 +16,7 @@ class SettingsError(RuntimeError):
 
 
 _js_settings = {}
+_js_settings_ts = time.time()
 _js_settings_lock = threading.RLock()
 
 
@@ -51,17 +52,17 @@ def init_settings():
     Initializes settings dict with default values.
     """
     global _js_settings
+    global _js_settings_ts
     global _js_settings_lock
     with _js_settings_lock:
         _js_settings = {
             "program_url": "https://github.com/transfix/atxcf",
             "version": "0.1",
-            "last_updated": 0.0,
+            "last_updated": time.time(),
             "options": get_default_options(),
-            "credentials": {},
-            "market_data": {}
+            "credentials": {}
         }
-        return _js_settings
+        _js_settings_ts = time.time()
 
 
 def _check_options_section(settings):
@@ -78,21 +79,28 @@ def get_settings():
     it loads it from disk.
     """
     global _js_settings
+    global _js_settings_ts
     global _js_settings_lock
     global _js_filelock
+    ret_settings = None
+    doInit = False
     with _js_settings_lock:
         if not _js_settings:
             fn = _get_settings_filename()
             # if a settings file doesn't exist, just init with defaults
             if not os.path.isfile(fn):
-                _js_settings = init_settings()
+                doInit = True
             else:
                 with _js_filelock:
                     try:
                         _js_settings = json.load(open(fn))
+                        _js_settings_ts = time.time()
                     except IOError as e:
                         raise SettingsError("Error loading %s: %s" % (fn, e.message))
-        return _js_settings
+    if doInit:
+        init_settings()
+    ret_settings = _js_settings
+    return ret_settings
 
 
 def set_settings(new_settings):
@@ -105,6 +113,7 @@ def set_settings(new_settings):
         raise SettingsError("invalid settings argument")
     with _js_settings_lock:
         _js_settings.update(new_settings)
+        _js_settings_ts = time.time()
 
 
 def reload_settings():
@@ -115,13 +124,17 @@ def reload_settings():
     global _js_settings_lock
     with _js_settings_lock:
         _js_settings = {}
+        _js_settings_ts = time.time()
     return get_settings()
 
 
 def write_settings():
     global _js_filelock
+    global _js_settings_ts
+    global _js_settings_lock
     settings = get_settings()
-    settings["last_updated"] = time.time()
+    with _js_settings_lock:
+        settings["last_updated"] = _js_settings_ts
     with _js_filelock:
         fn = _get_settings_filename()
         try:
@@ -233,6 +246,7 @@ def get_last_updated():
     """
     Returns the value of the last_updated field, which is
     the last time the settings file was written.
+    TODO: return the file modification time from file metadata
     """
     settings = get_settings()
     if not "last_updated" in settings:
@@ -242,3 +256,21 @@ def get_last_updated():
 
 import atexit
 atexit.register(write_settings)
+
+
+def _sync_settings():
+    global _js_settings_lock
+    global _js_settings_ts
+
+    while True:
+        interval = get_option("settings_update_interval")
+        time.sleep(float(interval))
+
+        print "_sync_settings: writing..."
+        write_settings()
+
+
+get_settings()
+_js_sync_thread = threading.Thread(target=_sync_settings)
+_js_sync_thread.daemon = True
+_js_sync_thread.start()
