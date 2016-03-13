@@ -3,10 +3,11 @@ PriceNetwork module. Maintains a graph representing an asset exchange network to
 prices of assets relative to each other.
 - transfix@sublevels.net - 20160117
 """
+import PriceSource
+import settings
 
 from functools import partial
 import networkx as nx
-import PriceSource
 
 import string
 import threading
@@ -28,6 +29,7 @@ class PriceNetwork(PriceSource.AllSources):
 
         # Contains symbols who's values are determined by a basket of assets.
         # They don't represent real market prices, instead it is a NAV calculation.
+        # TODO: finish this basket stuff later
         catx_test0 = {
             "XBT": 1.0,
             "LTC": 10.0,
@@ -43,8 +45,6 @@ class PriceNetwork(PriceSource.AllSources):
             "CATX_test1": catx_test1
         }
 
-        self._base_currencies = ["XBT", "USD"]
-        
 
     def _generate_graph(self):
         all_symbols = self.get_symbols()
@@ -60,20 +60,27 @@ class PriceNetwork(PriceSource.AllSources):
         def get_mkt_price(mkt_pair_str):
             mkt_pair = mkt_pair_str.split("/")
             try:
-                last_price = super(PriceNetwork, self).get_price(mkt_pair[0], mkt_pair[1])
-                print "Adding market", mkt_pair[0], mkt_pair[1], last_price
-                return (mkt_pair[0], mkt_pair[1], last_price)
-            except PriceSource.PriceSourceError:
-                return (mkt_pair[0], mkt_pair[1], None)
+                last_price = None
+                if self._has_stored_price(mkt_pair_str):
+                    last_price = self._get_stored_price(mkt_pair_str)
+                    print "Loading market", mkt_pair[0], mkt_pair[1]
+                else:
+                    last_price = super(PriceNetwork, self).get_price(mkt_pair[0], mkt_pair[1])
+                    print "Adding market", mkt_pair[0], mkt_pair[1]
+                return (mkt_pair[0], mkt_pair[1], last_price, "")
+            except PriceSource.PriceSourceError as e:
+                return (mkt_pair[0], mkt_pair[1], None, e.message)
 
         print "Polling known markets..."
         # multiproccessing isn't working... some pickling error
         #pool = multiprocessing.Pool()
         #all_market_prices = pool.map(get_mkt_price, all_markets, 32)
         all_market_prices = map(get_mkt_price, all_markets)
-        for from_mkt, to_mkt, last_price in all_market_prices:
+        error_msgs = []
+        for from_mkt, to_mkt, last_price, msg in all_market_prices:
             if last_price == None:
                 bad_markets.append("{0}/{1}".format(from_mkt, to_mkt))
+                error_msgs.append("{0}/{1}: {2}".format(from_mkt, to_mkt, msg))
             else:
                 G.add_edge(from_mkt, to_mkt, last_price = last_price)
                 good_markets.append((from_mkt, to_mkt, last_price))
@@ -88,7 +95,7 @@ class PriceNetwork(PriceSource.AllSources):
 
         # There may have been errors retriving market info for some markets listed
         # as available. Let's print them out here.
-        print "Dropped markets due to errors getting last price: ", bad_markets
+        print "Dropped markets due to errors getting last price: ", error_msgs
         
         return G
 

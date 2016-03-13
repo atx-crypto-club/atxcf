@@ -99,7 +99,8 @@ def get_settings():
                         raise SettingsError("Error loading %s: %s" % (fn, e.message))
     if doInit:
         init_settings()
-    ret_settings = _js_settings
+    with _js_settings_lock:
+        ret_settings = _js_settings.copy() # return a copy so we're thread safe
     return ret_settings
 
 
@@ -259,9 +260,6 @@ atexit.register(write_settings)
 
 
 def _sync_settings():
-    global _js_settings_lock
-    global _js_settings_ts
-
     while True:
         interval = get_option("settings_update_interval")
         time.sleep(float(interval))

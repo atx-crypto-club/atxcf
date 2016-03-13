@@ -172,7 +172,7 @@ class Poloniex(PriceSource):
 
     def __init__(self):
         super(Poloniex, self).__init__()
-        api_key, api_secret = get_creds("poloniex.com")
+        api_key, api_secret = get_creds(self._class_name())
         self._pol = poloniex.poloniex(api_key, api_secret)
         try:
             self._pol_ticker = self._pol.returnTicker()
@@ -372,7 +372,7 @@ class Bittrex(PriceSource):
 
     def __init__(self):
         super(Bittrex, self).__init__()
-        api_key, api_secret = get_creds("bittrex.com")
+        api_key, api_secret = get_creds(self._class_name())
         self._bittrex = bittrex.Bittrex(api_key, api_secret)
         try:
             currencies = self._bittrex.get_currencies()
@@ -480,12 +480,14 @@ class Conversions(PriceSource):
     def __init__(self):
         super(Conversions, self).__init__()
 
-        def test0xbt_func():
-            return 0.31337
+        #def test0xbt_func():
+        #    return 0.31337
 
-        def test1test0_func():
-            return 1337
+        #def test1test0_func():
+        #    return 1337
 
+        # default conversions
+        # TODO: support arbitrary conversion functions other than linear f(x) -> x*C
         self._mapping = {
             "XBT/BTC": 1.0,
             "mNHZ/NHZ": 1000.0,
@@ -495,9 +497,17 @@ class Conversions(PriceSource):
             "_MMNXT/MMNXT": 1.0,
             "_CoinoUSD/CoinoUSD": 1.0,
             "XDG/DOGE": 1.0,
-            "TEST0/XBT": test0xbt_func,
-            "TEST1/TEST0": test1test0_func
+            #"TEST0/XBT": test0xbt_func,
+            #"TEST1/TEST0": test1test0_func
         }
+        sett = settings.get_settings()
+        if not "Conversions" in sett:
+            sett["Conversions"] = self._mapping
+        else:
+            conv = sett["Conversions"]
+            self._mapping.update(conv)
+            sett["Conversions"] = self._mapping
+        settings.set_settings(sett)
 
         self._lock = threading.RLock()
 
@@ -573,11 +583,29 @@ class AllSources(PriceSource):
         # handles to price sources
         self._sources = {}
 
+        # make sure there is a AllSources section in the settings
+        sett = settings.get_settings()
+        if not self._class_name() in sett:
+            sett.update({self._class_name():{}})
+
+        # make sure there is a "prices" subsection in the AllSources section
+        if not "prices" in sett[self._class_name()]:
+            sett[self._class_name()].update({"prices": {}})
+
+        # make sure there is a "sources" subsection in the AllSources section
+        if not "sources" in sett[self._class_name()]:
+            sett[self._class_name()].update({"sources": {}})
+
+        # set global settings
+        settings.set_settings(sett)
+
         # Populate the sources dict
         errors = []
         def add_source(srcname, srcclassobj, sources):
             try:
                 sources[srcname] = srcclassobj()
+                for mkt_pair in sources[srcname].get_markets():
+                    self._store_source(srcname, mkt_pair)
             except RuntimeError as e:
                 errors.append(e.message)
 
@@ -587,6 +615,104 @@ class AllSources(PriceSource):
 
         if len(errors) > 0:
             print "AllSources errors:", errors
+
+
+    def _store_source(self, source_name, mkt_pair):
+        """
+        Associates a source with a market pair in the AllSources cache
+        """
+        sett = settings.get_settings()
+        sources = sett[self._class_name()]["sources"]
+        if not mkt_pair in sources:
+            sources.update({mkt_pair:[source_name]})
+        else:
+            source_set = set(sources[mkt_pair])
+            source_set.add(source_name)
+            sources[mkt_pair] = list(source_set)
+        settings.set_settings(sett)
+
+
+    def _store_price(self, source_name, mkt_pair, price):
+        """
+        Appends a price to the settings AllSources cache for a 
+        particular market pair known by a source.
+        """
+        self._store_source(source_name, mkt_pair)
+        sett = settings.get_settings()
+        prices = sett[self._class_name()]["prices"]
+        if not source_name in prices:
+            prices.update({source_name:{}})
+        if not mkt_pair in prices[source_name]:
+            prices[source_name].update({mkt_pair:[]})
+        price_list = prices[source_name][mkt_pair]
+        # just update the time of last element if price is unch
+        if len(price_list) > 0 and price_list[-1][1] == price:
+            price_list[-1] = (time.time(), price)
+        else:
+            price_list.append((time.time(), price))
+        settings.set_settings(sett)
+
+
+    def _has_stored_price(self, mkt_pair):
+        """
+        Returns whether a price for the specified market pair has been
+        recorded.
+        """
+        sett = settings.get_settings()
+        sources = sett[self._class_name()]["sources"]
+        prices = sett[self._class_name()]["prices"]
+        if mkt_pair in sources:
+            for source in sources[mkt_pair]:
+                if not source in prices:
+                    continue
+                if not mkt_pair in prices[source]:
+                    continue
+                return True
+        return False
+
+
+    def _get_stored_last_price_pairs(self, mkt_pair):
+        sett = settings.get_settings()
+        sources = sett[self._class_name()]["sources"]
+        prices = sett[self._class_name()]["prices"]
+        if not mkt_pair in sources:
+            raise PriceSourceError(
+                "%s: no stored market %s" % (self._class_name(), mkt_pair)
+            )
+
+        price_list = []
+        for source in sources[mkt_pair]:
+            if not source in prices:
+                continue
+            if not mkt_pair in prices[source]:
+                continue
+            price_seq = prices[source][mkt_pair]
+            if len(price_seq) == 0:
+                raise PriceSourceError(
+                    "%s: missing prices for market %s in source %s" % (self._class_name(), mkt_par, source)
+                )
+            last_price = price_seq[-1]
+            price_list.append(last_price)
+        return price_list
+
+
+    def _get_stored_price(self, mkt_pair):
+        price_list = self._get_stored_last_price_pairs(mkt_pair)
+        if len(price_list) == 0:
+            raise PriceSourceError(
+                "%s: empty stored price list" % self._class_name()
+            )
+        price_list = [item[1] for item in price_list]
+        return math.fsum(price_list)/float(len(price_list))
+
+
+    def _get_last_stored_price_time(self, mkt_pair):
+        price_list = self._get_stored_last_price_pairs(mkt_pair)
+        if len(price_list) == 0:
+            raise PriceSourceError(
+                "%s: empty stored price list" % self._class_name()
+            )
+        return max([item[0] for item in price_list])
 
 
     def get_symbols(self):
@@ -625,18 +751,46 @@ class AllSources(PriceSource):
         return list(mkts)
 
 
+    def get_market_sources(self):
+        """
+        Returns all market sources with their respective markets
+        """
+        mkt_srcs = {}
+        with self._lock:
+            for source in self._sources.itervalues():
+                mkt_srcs.update({source._class_name(): source.get_markets()})
+        return mkt_srcs
+
+
     def get_price(self, from_asset, to_asset, amount = 1.0):
         """
         Returns price detemrined as an average across all known sources.
         """
+        mkt_pair = "{0}/{1}".format(from_asset, to_asset)
+        print "getting price for", mkt_pair
+        interval = settings.get_option("price_update_interval")
+        stored_price = None
+        if self._has_stored_price(mkt_pair):
+            last_price_time = self._get_last_stored_price_time(mkt_pair)
+            stored_price = self._get_stored_price(mkt_pair)
+            if time.time() - last_price_time <= interval:
+                print "Returning stored price for", mkt_pair
+                return stored_price * amount
+
         prices = []
         with self._lock:
             for source_name, source in self._sources.iteritems():
                 try:
                     price = source.get_price(from_asset, to_asset, amount)
                     prices.append(price)
+                    self._store_price(source_name, mkt_pair, price / amount) 
                 except PriceSourceError:
                     pass
+
+        if len(prices) == 0 and stored_price:
+            print "Could not retrieve price for %s, using previously stored" % mkt_pair
+            prices.append(stored_price)
+                        
         if len(prices) == 0:
             raise PriceSourceError("%s: Couldn't determine price" % self._class_name())
-        return math.fsum(prices)/float(len(prices))
+        return math.fsum(prices)/float(len(prices)) # TODO: work on price list reduction
