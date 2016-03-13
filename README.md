@@ -18,7 +18,7 @@ This thing is a work in progress and has known issues like being slow and crashy
 
     #!/bin/bash
     export SLACKBOT_API_TOKEN="<your slackbot API token>"
-    until python agent.py; do
+    until /usr/bin/python -c "import atxcf; atxcf.start_agent()"; do
         echo "Server 'agent.py' crashed with exit code $?.  Respawning.." >&2
         sleep 1
     done
