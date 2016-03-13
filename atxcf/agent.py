@@ -12,10 +12,13 @@ import coinmarketcap # for top marketcap coins and stats
 
 _pn = None
 def init():
+    global _pn
     _pn = PriceNetwork.PriceNetwork()
+    _pn.init_graph()
 
 
 def _get_price_network():
+    global _pn
     if not _pn:
         init()
     return _pn
