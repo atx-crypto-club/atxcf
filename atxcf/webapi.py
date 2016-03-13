@@ -5,6 +5,7 @@ from flask.ext.cors import CORS
 #from flask import jsonify
 
 import PriceNetwork
+import settings
 
 import coinmarketcap
 
@@ -58,13 +59,40 @@ def get_top_coins(top):
     return " ".join(top_symbols)
 
 
+def _get_port():
+    """
+    Returns the port from the settings, and sets a reasonable default if
+    it isn't there.
+    """
+    port = 1337
+    try:
+        port = settings.get_option("port")
+    except settings.SettingsError:
+        settings.set_option("port", port)
+    return port
+
+
+def _get_host():
+    """
+    Returns the host from the settings, and sets a reasonable default if
+    it isn't there.
+    """
+    host = "0.0.0.0" # bind to all interfaces
+    try:
+        host = settings.get_option("host")
+    except settings.SettingsError:
+        settings.set_option("host", host)
+    return host
+
+
 def main():
+    global _source
     parser = argparse.ArgumentParser(
         description="Launches atxcf price API",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     _source = PriceNetwork.PriceNetwork(True)
-    app.run(host='0.0.0.0', port=1337, threaded=True)
+    app.run(host=_get_host(), port=_get_port(), threaded=True)
 
 
 if __name__ == '__main__':
