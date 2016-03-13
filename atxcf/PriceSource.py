@@ -777,15 +777,30 @@ class AllSources(PriceSource):
                 print "Returning stored price for", mkt_pair
                 return stored_price * amount
 
+        # If we have already retrieved a price for this pair before, only try to retrieve
+        # prices from the same sources as before. Otherwise, just try all sources and record
+        # the one that succeeds. TODO: avoid having to try all sources
         prices = []
+        sett = settings.get_settings()
+        sources = sett[self._class_name()]["sources"]
+        prices_d = sett[self._class_name()]["prices"]
         with self._lock:
-            for source_name, source in self._sources.iteritems():
-                try:
-                    price = source.get_price(from_asset, to_asset, amount)
-                    prices.append(price)
-                    self._store_price(source_name, mkt_pair, price / amount) 
-                except PriceSourceError:
-                    pass
+            if mkt_pair in sources:
+                for source_name in sources[mkt_pair]:
+                    try:
+                        price = self._sources[source_name].get_price(from_asset, to_asset, amount)
+                        prices.append(price)
+                        self._store_price(source_name, mkt_pair, price / amount)
+                    except PriceSourceError:
+                        pass # TODO: might want to log this error
+            else:
+                for source_name, source in self._sources.iteritems():
+                    try:
+                        price = source.get_price(from_asset, to_asset, amount)
+                        prices.append(price)
+                        self._store_price(source_name, mkt_pair, price / amount) 
+                    except PriceSourceError:
+                        pass
 
         if len(prices) == 0 and stored_price:
             print "Could not retrieve price for %s, using previously stored" % mkt_pair
