@@ -184,8 +184,9 @@ class Poloniex(PriceSource):
 
     def _update_ticker(self):
         with self._lock:
-            # update ticker if it is older than 60 seconds.
-            if time.time() - self._pol_ticker_ts > 60:
+            # update ticker if it is older than the specified amount of seconds.
+            timeout = settings.get_option("price_update_interval")
+            if time.time() - self._pol_ticker_ts > timeout:
                 self._pol_ticker = self._pol.returnTicker()
                 self._pol_ticker_ts = time.time()
 
@@ -280,8 +281,9 @@ class CryptoAssetCharts(PriceSource):
 
     def _update_info(self):
         with self._lock:
-            # if it is older than 60 seconds, do another request.
-            if time.time() - self._response_ts > 60:
+            # if it is older than timeout seconds, do another request.
+            timeout = settings.get_option("price_update_interval")
+            if time.time() - self._response_ts > timeout:
                 self._response = requests.get(self._req_url)
                 self._response_ts = time.time()
             doc = pq(self._response.content)
@@ -393,8 +395,9 @@ class Bittrex(PriceSource):
 
     def _update_price_map(self, force=False):
         with self._lock:
-            # update ticker if it is older than 60 seconds.
-            if force or time.time() - self._ticker_ts > 60:
+            # update ticker if it is older than timout seconds.
+            timeout = settings.get_option("price_update_interval")
+            if force or time.time() - self._ticker_ts > timeout:
                 result = self._bittrex.get_market_summaries()["result"]
                 prices = [(res["MarketName"], res["Last"]) for res in result]
                 for market, price in prices:
@@ -580,9 +583,6 @@ class AllSources(PriceSource):
         super(AllSources, self).__init__()
         self._lock = threading.RLock()
 
-        # handles to price sources
-        self._sources = {}
-
         # make sure there is a AllSources section in the settings
         sett = settings.get_settings()
         if not self._class_name() in sett:
@@ -596,25 +596,41 @@ class AllSources(PriceSource):
         if not "sources" in sett[self._class_name()]:
             sett[self._class_name()].update({"sources": {}})
 
-        # set global settings
         settings.set_settings(sett)
 
-        # Populate the sources dict
-        errors = []
-        def add_source(srcname, srcclassobj, sources):
-            try:
-                sources[srcname] = srcclassobj()
-                for mkt_pair in sources[srcname].get_markets():
-                    self._store_source(srcname, mkt_pair)
-            except RuntimeError as e:
-                errors.append(e.message)
+        # handles to price sources
+        self._sources = {}
+        self.init_sources()
 
-        src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
-        for src_class in src_classes:
-            add_source(src_class.__name__, src_class, self._sources)
 
-        if len(errors) > 0:
-            print "AllSources errors:", errors
+    def init_sources(self, addl_sources=None):
+        """
+        (Re-)Populates the _sources dict. For now, this needs to be called
+        to refresh the view of available symbols to price against.
+        """
+        with self._lock:
+            errors = []
+            src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
+
+            # if any additional sources were passed, let's add them to the dict
+            if addl_sources:
+                for addl_source in addl_sources:
+                    src_classes.append(addl_source)
+
+            def add_source(srcname, srcclassobj, sources):
+                try:
+                    obj = srcclassobj()
+                    sources.update({srcname: obj})
+                    for mkt_pair in obj.get_markets():
+                        self._store_source(srcname, mkt_pair)
+                except RuntimeError as e:
+                    errors.append(e.message)
+
+            for src_class in src_classes:
+                add_source(src_class.__name__, src_class, self._sources)
+
+            if len(errors) > 0:
+                print "AllSources errors:", errors
 
 
     def _store_source(self, source_name, mkt_pair):
@@ -779,7 +795,7 @@ class AllSources(PriceSource):
 
         # If we have already retrieved a price for this pair before, only try to retrieve
         # prices from the same sources as before. Otherwise, just try all sources and record
-        # the one that succeeds. TODO: avoid having to try all sources
+        # the one that succeeds. TODO: avoid having to try all sources in the first place.
         prices = []
         sett = settings.get_settings()
         sources = sett[self._class_name()]["sources"]
@@ -807,5 +823,5 @@ class AllSources(PriceSource):
             prices.append(stored_price)
                         
         if len(prices) == 0:
-            raise PriceSourceError("%s: Couldn't determine price" % self._class_name())
+            raise PriceSourceError("%s: Couldn't determine price of %s/%s" % (self._class_name(), from_asset, to_asset))
         return math.fsum(prices)/float(len(prices)) # TODO: work on price list reduction
