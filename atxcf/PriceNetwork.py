@@ -33,24 +33,6 @@ class PriceNetwork(PriceSource.AllSources):
         if doInitGraph:
             self.init_graph()
 
-        # Contains symbols who's values are determined by a basket of assets.
-        # They don't represent real market prices, instead it is a NAV calculation.
-        # TODO: finish this basket stuff later
-        catx_test0 = {
-            "XBT": 1.0,
-            "LTC": 10.0,
-            "XDG": 10000.0
-        }
-        catx_test1 = {
-            "DASH": 10.0,
-            "FCT": 100.0,
-            "NXT": 100000.0
-        }
-        self._baskets = {
-            "CATX_test0": catx_test0,
-            "CATX_test1": catx_test1
-        }
-
 
     def _get_baskets(self):
         """
