@@ -6,6 +6,7 @@ from flask.ext.cors import CORS
 
 import PriceNetwork
 import settings
+import cmd
 
 import coinmarketcap
 
@@ -19,7 +20,6 @@ class ProxySource(PriceNetwork.PriceNetwork):
 
 app = Flask(__name__)
 CORS(app)
-_source = None
 
 
 @app.route('/')
@@ -29,33 +29,27 @@ def index():
 
 @app.route('/get_symbols')
 def get_symbols():
-    if _source == None:
-        raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
-    symbols = _source.get_symbols()
+    symbols = cmd.get_symbols()
     return " ".join(sorted(symbols))
 
 
 @app.route('/get_price/<from_asset>/<to_asset>', defaults={'value': 1.0})
 @app.route('/get_price/<from_asset>/<to_asset>/<value>')
 def get_price(from_asset, to_asset, value):
-    if _source == None:
-        raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
-    price = _source.get_price(from_asset, to_asset, value)
+    price = cmd.get_price(value, from_asset, to_asset) # this inverted API sucks...
     return str(price)
 
 
 @app.route('/get_markets')
 def get_markets():
-    if _source == None:
-        raise PriceNetwork.PriceSource.PriceSourceError("No price source set")
-    mkts = _source.get_markets()
+    mkts = cmd.get_markets()
     return " ".join(sorted(mkts))
 
 
 @app.route('/get_top_coins', defaults={'top': 10})
 @app.route('/get_top_coins/<top>')
 def get_top_coins(top):
-    top_symbols = [coinmarketcap.short(name.lower()) for name in coinmarketcap.top(int(top))]
+    top_symbols = cmd.get_top_coins(top)
     return " ".join(top_symbols)
 
 
@@ -86,15 +80,14 @@ def _get_host():
 
 
 def main():
-    global _source
+    # TODO: finish arg parsing...
     parser = argparse.ArgumentParser(
         description="Launches atxcf price API",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    _source = PriceNetwork.PriceNetwork(True)
+    cmd.init() # avoid annoying lazy init
     app.run(host=_get_host(), port=_get_port(), threaded=True)
 
 
 if __name__ == '__main__':
     main()
-

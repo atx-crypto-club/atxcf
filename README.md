@@ -19,11 +19,11 @@ This thing is a work in progress and has known issues like being slow and crashy
     #!/bin/bash
     export SLACKBOT_API_TOKEN="<your slackbot API token>"
     until /usr/bin/python -c "import atxcf; atxcf.start_agent()"; do
-        echo "Server 'agent.py' crashed with exit code $?.  Respawning.." >&2
+        echo ":// agent crashed with exit code $?.  Respawning.." >&2
         sleep 1
     done
 
-I recommend running webapi.py similarly (doesn't need the API token for that case).
+A similar script for the webapi is included.
 
 **Supported commands**
 

@@ -64,6 +64,10 @@ from .settings import (
     remove_creds, SettingsError
 )
 
+from .cmd import (
+    get_symbols, get_price, get_markets, get_top_coins, CmdError
+)
+from .cmd import init as cmd_init
+
 from .agent import main as start_agent
-from .agent import init as init_agent
 from .webapi import main as start_webapi
