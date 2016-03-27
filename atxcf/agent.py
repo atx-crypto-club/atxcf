@@ -22,7 +22,7 @@ def hi(message):
 
 @respond_to('about', re.IGNORECASE)
 def about(message):
-    message.reply('~~~ atxcf agent bot ~~~')
+    message.reply('~~~ atxcf agent bot ~~~\ncommands: %s' % cmd.get_commands())
 
 
 @respond_to('get_symbols')
@@ -58,6 +58,20 @@ def get_top_coins(message, top=10):
     message.reply(" ".join(top_symbols))
 
 
+@respond_to('get_commands$', re.IGNORECASE)
+def get_commands(message):
+    cmds = cmd.get_commands()
+    message.reply(" ".join(sorted(cmds)))
+
+
+#@respond_to('help$', re.IGNORECASE)
+#@respond_to('get_help (.*)', re.IGNORECASE)
+#@respond_to('get_help$', re.IGNORECASE)
+#@respond_to('get_help (.*)', re.IGNORECASE)
+#def get_help(message, cmd_str="get_help"):
+#    return cmd.get_help(cmd_str)
+
+
 #@respond_to("run_shell (.*)")
 #def run_shell(message, cmd):
 #    print "Executing: %s" % cmd
@@ -67,7 +81,7 @@ def get_top_coins(message, top=10):
 
 
 def main():
-    cmd.init() # avoid annoying lazy init
+    PriceNetwork.init() # avoid annoying lazy init
     bot = Bot()
     bot.run()
 

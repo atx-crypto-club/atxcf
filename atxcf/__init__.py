@@ -56,6 +56,7 @@ from .PriceSource import (
 from .PriceNetwork import (
     PriceNetwork, PriceNetworkError 
 )
+from .PriceNetwork import init as init_price_network
 
 from .settings import (
     get_default_options, init_settings, get_settings, set_settings,
@@ -65,9 +66,9 @@ from .settings import (
 )
 
 from .cmd import (
-    get_symbols, get_price, get_markets, get_top_coins, CmdError
+    get_symbols, get_price, get_markets, get_top_coins, CmdError,
+    get_commands, get_help
 )
-from .cmd import init as cmd_init
 
 from .agent import main as start_agent
 from .webapi import main as start_webapi

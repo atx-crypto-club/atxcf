@@ -24,7 +24,13 @@ CORS(app)
 
 @app.route('/')
 def index():
-    return '~~ atxcf-bot ~~'
+    idx = """
+<pre>
+  ~~ atxcf-bot ~~
+  commands: %s
+</pre>
+    """ % cmd.get_commands()
+    return idx
 
 
 @app.route('/get_symbols')
@@ -51,6 +57,17 @@ def get_markets():
 def get_top_coins(top):
     top_symbols = cmd.get_top_coins(top)
     return " ".join(top_symbols)
+
+
+@app.route('/get_commands')
+def get_commands():
+    return " ".join(sorted(cmd.get_commands()))
+
+
+@app.route('/get_help', defaults={'cmd_help': 'get_help'})
+@app.route('/get_help/<cmd_help>')
+def get_help(cmd_help):
+    return "<pre>%s</pre>" % cmd.get_help(cmd_help)
 
 
 def _get_port():
@@ -85,7 +102,7 @@ def main():
         description="Launches atxcf price API",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    cmd.init() # avoid annoying lazy init
+    PriceNetwork.init() # avoid annoying lazy init
     app.run(host=_get_host(), port=_get_port(), threaded=True)
 
 

@@ -2,30 +2,18 @@
 Main set of commands known by the atxcf bot.
 """
 
+from PriceNetwork import _get_price_network
 import PriceNetwork
 import settings
 
 import coinmarketcap
 
 import string
+import sys
 
 
 class CmdError(PriceNetwork.PriceNetworkError):
     pass
-
-
-_pn = None
-def init():
-    global _pn
-    _pn = PriceNetwork.PriceNetwork()
-    _pn.init_graph()
-
-
-def _get_price_network():
-    global _pn
-    if not _pn:
-        init()
-    return _pn
 
 
 def get_symbols():
@@ -87,3 +75,33 @@ def get_top_coins(top=10):
     Returns the top market cap coinz....
     """
     return [coinmarketcap.short(name) for name in coinmarketcap.top(int(top))]
+
+
+def get_commands():
+    """
+    Returns all bot commands.
+
+    All the functions in this module are considered bot commands
+    unless their names begin with a '_' character.
+    """
+    def is_cmd(cmd):
+        cmd_obj = getattr(sys.modules[__name__], cmd)
+        is_callable = hasattr(cmd_obj, "__call__")
+        is_class = isinstance(cmd_obj, type)
+        is_public = not cmd.startswith('_')
+        return is_callable and is_public and not is_class
+    return [cmd for cmd in dir(sys.modules[__name__]) if is_cmd(cmd)]
+
+
+def get_help(*args):
+    """
+    Returns help for the specified command, which is just it's docstring.
+    """
+    if len(args) > 0:
+        cmd_name = args[0]
+        if not cmd_name in get_commands():
+            raise CmdError("Invalid command %s" % cmd_name)
+        cmd_module = sys.modules[__name__]
+        return getattr(cmd_module, cmd_name).__doc__
+    else:
+        return get_help.__doc__

@@ -233,3 +233,23 @@ class PriceNetwork(PriceSource.AllSources):
             raise PriceNetworkError("Invalid trade_pair_str %s" % trade_pair_str)
         asset_strs = [cur.strip() for cur in asset_strs]
         return self.get_price(asset_strs[0], asset_strs[1], value)
+
+
+_pn = None
+def init():
+    """
+    (Re-)initializes the PriceNetwork singleton.
+    """
+    global _pn
+    _pn = PriceNetwork()
+    _pn.init_graph()
+
+
+def _get_price_network():
+    """
+    Returns a singleton instance of a PriceNetwork.
+    """
+    global _pn
+    if not _pn:
+        init()
+    return _pn
