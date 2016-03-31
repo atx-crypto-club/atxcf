@@ -778,7 +778,7 @@ class AllSources(PriceSource):
         return mkt_srcs
 
 
-    def get_price(self, from_asset, to_asset, amount = 1.0):
+    def get_price(self, from_asset, to_asset, amount = 1.0, get_last=False):
         """
         Returns price detemrined as an average across all known sources.
         """
@@ -789,7 +789,7 @@ class AllSources(PriceSource):
         if self._has_stored_price(mkt_pair):
             last_price_time = self._get_last_stored_price_time(mkt_pair)
             stored_price = self._get_stored_price(mkt_pair)
-            if time.time() - last_price_time <= interval:
+            if get_last or time.time() - last_price_time <= interval:
                 print "Returning stored price for", mkt_pair
                 return stored_price * amount
 

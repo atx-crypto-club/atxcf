@@ -12,6 +12,7 @@ import networkx as nx
 import string
 import threading
 import multiprocessing
+import time
 
 
 class PriceNetworkError(PriceSource.PriceSourceError):
@@ -42,7 +43,7 @@ class PriceNetwork(PriceSource.AllSources):
         return sett["Baskets"]
 
 
-    def _get_basket_value(self, basket_name, to_asset):
+    def _get_basket_value(self, basket_name, to_asset, get_last=False):
         """
         Returns the basket's value in terms of to_asset.
         """
@@ -52,7 +53,7 @@ class PriceNetwork(PriceSource.AllSources):
         basket_d = baskets[basket_name]
         to_asset_amount = 0.0
         for name, amount in basket_d.iteritems():
-            to_asset_amount += self._do_get_price(name, to_asset, amount)
+            to_asset_amount += self.get_price(name, to_asset, amount, get_last)
         return to_asset_amount
 
 
@@ -66,15 +67,29 @@ class PriceNetwork(PriceSource.AllSources):
         return False
 
 
-    def _do_get_price(self, from_asset, to_asset, value = 1.0):
+    def _do_get_price(self, from_asset, to_asset, value=1.0, get_last=False):
         """
         Returns price of assets or baskets of assets.
 
         TODO: deal with possible cycles (baskets containing themselves...)
         """
-        if self._is_basket(from_asset):
+        mkt_pair_str = "{0}/{1}".format(from_asset, to_asset)
+        is_price_cached = self._has_stored_price(mkt_pair_str)
+        interval = settings.get_option("price_update_interval")
+        last_price = None
+
+        if is_price_cached:
+            when_cached = self._get_last_stored_price_time(mkt_pair_str)
+            if get_last or time.time() - when_cached <= interval:
+                last_price = self._get_stored_price(mkt_pair_str) * value
+
+        if not last_price and self._is_basket(from_asset):
             return self._get_basket_value(from_asset, to_asset) * value
-        return super(PriceNetwork, self).get_price(from_asset, to_asset, value)
+
+        if not last_price:
+            last_price = super(PriceNetwork, self).get_price(from_asset, to_asset, value)
+
+        return last_price
 
 
     def _generate_graph(self):
@@ -195,7 +210,7 @@ class PriceNetwork(PriceSource.AllSources):
             for base_cur in self.get_base_symbols():
                 try:
                     trade_pair = "{0}/{1}".format(basket_name, base_cur)
-                    self._do_get_price(basket_name, base_cur) # check if this throws
+                    self.get_price(basket_name, base_cur, 1.0, True) # check if this throws
                     basket_markets.append(trade_pair)
                 except PriceSource.PriceSourceError:
                     pass
@@ -207,7 +222,7 @@ class PriceNetwork(PriceSource.AllSources):
         init_graph() # TODO: just add new edges
 
 
-    def get_price(self, from_asset, to_asset, value = 1.0):
+    def get_price(self, from_asset, to_asset, value = 1.0, get_last=False):
         
         # do nothing if they're the same
         if from_asset == to_asset:
@@ -221,18 +236,18 @@ class PriceNetwork(PriceSource.AllSources):
         # for each edge in the path, compute the conversion price
         cur_value = float(value)
         for from_cur, to_cur in zip(sh_p[0:], sh_p[1:]):
-            cur_value = self._do_get_price(from_cur, to_cur, cur_value)
+            cur_value = self._do_get_price(from_cur, to_cur, cur_value, get_last)
         return cur_value
 
 
-    def price(self, trade_pair_str, value = 1.0):
+    def price(self, trade_pair_str, value = 1.0, get_last=False):
         # trade_pair_str is a string with a slash separating two
         # asset symbols, like XBT/USD
         asset_strs = string.split(trade_pair_str,"/",1)
         if len(asset_strs) != 2:
             raise PriceNetworkError("Invalid trade_pair_str %s" % trade_pair_str)
         asset_strs = [cur.strip() for cur in asset_strs]
-        return self.get_price(asset_strs[0], asset_strs[1], value)
+        return self.get_price(asset_strs[0], asset_strs[1], value, get_last)
 
 
 _pn = None
