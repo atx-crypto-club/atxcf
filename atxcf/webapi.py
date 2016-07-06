@@ -7,6 +7,7 @@ from flask.ext.cors import CORS
 import PriceNetwork
 import settings
 import cmd
+import sys
 
 import coinmarketcap
 
@@ -96,15 +97,20 @@ def _get_host():
     return host
 
 
-def main():
-    # TODO: finish arg parsing...
-    parser = argparse.ArgumentParser(
-        description="Launches atxcf price API",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+def main(argv=[]):
+    # get resonable defaults
+    host = _get_host()
+    port = _get_port()
 
-    PriceNetwork.init() # avoid annoying lazy init
-    app.run(host=_get_host(), port=_get_port(), threaded=True)
+    # override with command line args
+    argc = len(argv)
+    if argc > 0:
+        host = argv[0]
+    if argc > 1:
+        port = argv[1]
+     
+    app.run(host=host, port=port, threaded=True)
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])

@@ -81,7 +81,6 @@ def get_commands(message):
 
 
 def main():
-    PriceNetwork.init() # avoid annoying lazy init
     bot = Bot()
     bot.run()
 
