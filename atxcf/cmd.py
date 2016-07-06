@@ -134,6 +134,13 @@ def get_help(*args):
         return get_help.__doc__
 
 
+def exit():
+    """
+    Exits the process.
+    """
+    sys.exit()
+
+
 def _run_cmd(*args):
     """
     Helper function to run a command given command args including the command
