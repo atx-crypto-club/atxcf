@@ -134,6 +134,15 @@ def get_help(*args):
         return get_help.__doc__
 
 
+def purge_cache(*args):
+    """
+    Purges the cache of prices.
+    """
+    with Mutex():
+        pn = _get_price_network()
+        pn.purge_cache()
+
+
 def exit():
     """
     Exits the process.

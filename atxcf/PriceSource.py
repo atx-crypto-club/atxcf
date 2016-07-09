@@ -9,6 +9,7 @@ import poloniex
 import bittrex
 # import coinmarketcap
 import settings
+import pricedb
 
 import requests
 import re
@@ -18,6 +19,7 @@ import json
 
 import math
 import time
+import datetime
 import threading
 import os
 
@@ -617,17 +619,17 @@ class AllSources(PriceSource):
                 for addl_source in addl_sources:
                     src_classes.append(addl_source)
 
-            def add_source(srcname, srcclassobj, sources):
+            def add_source(srcclassobj):
                 try:
                     obj = srcclassobj()
-                    sources.update({srcname: obj})
+                    self._sources.update({srcclassobj.__name__: obj})
                     for mkt_pair in obj.get_markets():
-                        self._store_source(srcname, mkt_pair)
+                        self._store_source(srcclassobj.__name__, mkt_pair)
                 except RuntimeError as e:
                     errors.append(e.message)
 
             for src_class in src_classes:
-                add_source(src_class.__name__, src_class, self._sources)
+                add_source(src_class)
 
             if len(errors) > 0:
                 print "AllSources errors:", errors
@@ -646,6 +648,7 @@ class AllSources(PriceSource):
             source_set.add(source_name)
             sources[mkt_pair] = list(source_set)
         settings.set_settings(sett)
+        pricedb.store_source(source_name, mkt_pair)
 
 
     def _store_price(self, source_name, mkt_pair, price):
@@ -662,11 +665,15 @@ class AllSources(PriceSource):
             prices[source_name].update({mkt_pair:[]})
         price_list = prices[source_name][mkt_pair]
         # just update the time of last element if price is unch
+        now_t = time.time()
+        now_dt = datetime.datetime.fromtimestamp(now_t)
         if len(price_list) > 0 and price_list[-1][1] == price:
-            price_list[-1] = (time.time(), price)
+            price_list[-1] = (now_t, price)
         else:
-            price_list.append((time.time(), price))
+            price_list.append((now_t, price))
         settings.set_settings(sett)
+        # TODO: only need to update time if last price hasn't changed
+        pricedb.store_price(source_name, mkt_pair, price, now_dt)
 
 
     def _has_stored_price(self, mkt_pair):
@@ -781,6 +788,8 @@ class AllSources(PriceSource):
     def get_price(self, from_asset, to_asset, amount = 1.0, get_last=False):
         """
         Returns price detemrined as an average across all known sources.
+        If get_last is True, this will return the last price recorded if one
+        exists and won't try to get a fresh price in that case.
         """
         mkt_pair = "{0}/{1}".format(from_asset, to_asset)
         print "getting price for", mkt_pair
@@ -825,3 +834,63 @@ class AllSources(PriceSource):
         if len(prices) == 0:
             raise PriceSourceError("%s: Couldn't determine price of %s/%s" % (self._class_name(), from_asset, to_asset))
         return math.fsum(prices)/float(len(prices)) # TODO: work on price list reduction
+
+
+    def purge_cache(self, **kwargs):
+        """
+        Purges cache of prices depending on arguments:
+        - olderthan: purges all prices that are older than 'olderthan'
+        - mkt_pair: purges prices from the specified market pair
+        - source: purges prices from the specified source
+        """
+        olderthan=time.time()
+        if "olderthan" in kwargs:
+            olderthan = kwargs["olderthan"]
+        mkt_pair = None # if none, purge all market pairs
+        if "mkt_pair" in kwargs:
+            mkt_pair = kwargs["mkt_pair"]
+        source = None # if none, purge from all sources
+        if "source" in kwargs:
+            source = kwargs["source"]
+
+        # TODO: maybe source and mkt_pair can be regexes?
+
+        # purge all prices for now
+        # TODO: finish me!
+        sett = settings.get_settings()
+        sett[self._class_name()].update({"prices": {}})
+        sett[self._class_name()].update({"sources": {}})
+        settings.set_settings(sett)
+
+
+    def get_num_prices(self, **kwargs):
+        """
+        Returns the number of prices for the specified source and market pair
+        """
+        # TODO: make mkt_pair and source regexes.
+        mkt_pair = None
+        if "mkt_pair" in kwargs:
+            mkt_pair = kwargs["mkt_pair"]
+        source = None
+        if "source" in kwargs:
+            source = kwargs["source"]
+
+        # TODO: finish me!
+        return 0
+
+
+    def get_cache_time_range(self, **kwargs):
+        """
+        Returns a tuple of times representing oldest time and newest time (inclusive)
+        of prices gathered for specified source and mkt_pair.
+        """
+        # TODO: make mkt_pair and source regexes.
+        mkt_pair = None
+        if "mkt_pair" in kwargs:
+            mkt_pair = kwargs["mkt_pair"]
+        source = None
+        if "source" in kwargs:
+            source = kwargs["source"]
+
+        # TODO: finish me!
+        return (time.time(), time.time())

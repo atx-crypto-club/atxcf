@@ -6,3 +6,4 @@ requests==2.9.1
 slackbot==0.3.0
 coinmarketcap=1.2.1
 filelock==2.0.5
+mysqldb==1.2.3

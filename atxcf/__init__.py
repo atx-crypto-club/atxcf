@@ -67,7 +67,7 @@ from .settings import (
 
 from .cmd import (
     get_symbols, get_price, get_markets, get_top_coins, CmdError,
-    get_commands, get_help
+    get_commands, get_help, purge_cache
 )
 
 from .agent import main as start_agent

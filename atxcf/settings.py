@@ -156,6 +156,17 @@ def get_option(option):
     return settings["options"][option]
 
 
+def has_option(option):
+    """
+    Returns whether an option exists
+    """
+    settings = get_settings()
+    _check_options_section(settings)
+    if not option in settings["options"]:
+        return False
+    return True
+
+
 def set_option(option, value):
     """
     Sets an option with the specified value in the options section.
