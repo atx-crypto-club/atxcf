@@ -648,7 +648,7 @@ class AllSources(PriceSource):
             source_set.add(source_name)
             sources[mkt_pair] = list(source_set)
         settings.set_settings(sett)
-        pricedb.store_source(source_name, mkt_pair)
+        pricedb.store_sourceentry(source_name, mkt_pair)
 
 
     def _store_price(self, source_name, mkt_pair, price):
