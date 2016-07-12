@@ -672,7 +672,6 @@ class AllSources(PriceSource):
         else:
             price_list.append((now_t, price))
         settings.set_settings(sett)
-        # TODO: only need to update time if last price hasn't changed
         pricedb.store_price(source_name, mkt_pair, price, now_dt)
 
 

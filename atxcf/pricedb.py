@@ -75,6 +75,22 @@ def get_db():
         return peewee.SqliteDatabase(sqlight_db_file())
 
 
+_asset_types = {
+    "cryptocurrency": 1,
+    "fiatcurrency": 2,
+    "cryptoasset": 3,
+    "commodity": 4,
+    "basket": 5
+}
+
+
+_source_types = {
+    "exchange": 1,
+    "website": 2,
+    "programatic": 3
+}
+
+
 class BaseModel(peewee.Model):
     class Meta:
         database = get_db()
@@ -83,11 +99,13 @@ class BaseModel(peewee.Model):
 class Source(BaseModel):
     name = peewee.CharField(primary_key=True)
     info = peewee.TextField(default="")
+    source_type = peewee.IntegerField(default=_source_types["exchange"])
 
 
 class Asset(BaseModel):
     name = peewee.CharField(primary_key=True)
     info = peewee.TextField(default="")
+    asset_type = peewee.IntegerField(default=_asset_types["cryptocurrency"])
 
 
 class SourceEntry(BaseModel):
@@ -110,13 +128,12 @@ def _get_assets_from_pair(mkt_pair):
     return (asset_strs[0], asset_strs[1])
 
 
-def store_asset(asset_name, asset_info=""):
+def store_asset(asset_name):
     """
     Stores an asset in the database, then returns its model.
     """
     Asset.create_table(fail_silently=True)
-    asset_model, asset_created = Asset.get_or_create(name=asset_name,
-                                                     info=asset_info)
+    asset_model, asset_created = Asset.get_or_create(name=asset_name)
     asset_model.save()
     if asset_created:
         print "Stored asset %s" % asset_name
@@ -128,7 +145,7 @@ def set_asset_info(asset_name, asset_info):
     Sets the asset info.
     """
     # store/get the asset model
-    asset_model = store_asset(asset_name, asset_info)
+    asset_model = store_asset(asset_name)
     asset_model.info = asset_info
     asset_model.save()
 
@@ -138,6 +155,24 @@ def get_asset_info(asset_name):
     Returns the asset info
     """
     return Asset.get(Asset.name == asset_name).info
+
+
+def set_asset_type(asset_name, asset_type):
+    """
+    Sets the asset type
+    """
+    if type(asset_type) is str:
+        asset_type = _asset_types[asset_type]
+    asset_model = store_asset(asset_name)
+    asset_model.asset_type = asset_type
+    asset_model.save()
+
+
+def get_asset_type(asset_name):
+    """
+    Returns the asset type.
+    """
+    return Asset.get(Asset.name == asset_name).asset_type
 
 
 def store_source(source_name):
@@ -169,6 +204,24 @@ def get_source_info(source_name):
     return Source.get(Source.name == source_name).info
 
 
+def set_source_type(source_name, source_type):
+    """
+    Sets the source type.
+    """
+    if type(source_type) is str:
+        source_type = _source_types[source_type]
+    source_model = store_source(source_name)
+    source_model.source_type = source_type
+    source_model.save()
+
+
+def get_source_type(source_name):
+    """
+    Gets the source type.
+    """
+    return Source.get(Source.name == source_name).source_type
+
+
 def store_sourceentry(source_name, mkt_pair):
     """
     Stores a source in the database.
@@ -192,14 +245,31 @@ def store_price(source_name, mkt_pair, price, price_time=datetime.datetime.now()
     """
     Stores a price in the database.
     """
-    print "Storing price for %s at %s" % (mkt_pair, source_name)
     sourceentry_model = store_sourceentry(source_name, mkt_pair)
     PriceEntry.create_table(fail_silently=True)
-    db_price = PriceEntry(from_source=sourceentry_model,
-                          price=price,
-                          price_time=price_time)
-    db_price.save()
-    return db_price
+
+    # Check the last price taken from this source. If it is the same, lets
+    # just update the timestamp instead of adding a lot of duplicate price data
+    # for quiet markets. Else, just write the new price.
+    last_price = None
+    try:
+        last_price = PriceEntry.select().where(PriceEntry.from_source == sourceentry_model) \
+            .order_by(-PriceEntry.price_time).get()
+    except:
+        pass
+
+    if last_price and last_price.price == price:
+        print "No price change for %s in %s" % (mkt_pair, source_name)
+        # last_price.price_time = price_time
+        # last_price.save()
+        return last_price
+    else:
+        print "Storing price for %s at %s" % (mkt_pair, source_name)
+        db_price = PriceEntry(from_source=sourceentry_model,
+                              price=price,
+                              price_time=price_time)
+        db_price.save()
+        return db_price
 
 
 def get_price_total_time_range(mkt_pair):
@@ -235,6 +305,8 @@ def get_price_info(mkt_pair, timerange=(None, None), from_sources=[]):
             if timerange[1] == None:
                 timerange[1] = last_price
                 
+
+    # TODO: handle from_sources
     query = PriceEntry.select().where(PriceEntry.price_time >= timerange[0],
                                       PriceEntry.price_time <= timerange[1])
 
