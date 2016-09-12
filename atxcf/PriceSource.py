@@ -35,6 +35,11 @@ def get_creds(site):
     return settings.get_creds(site)
 
 
+# set default price_update_interval to 60 second intervals
+if not settings.has_option("price_update_interval"):
+    settings.set_option("price_update_interval", 60)
+
+
 class PriceSource(object):
     """
     The basic asset price querying interface.
@@ -585,20 +590,16 @@ class AllSources(PriceSource):
         super(AllSources, self).__init__()
         self._lock = threading.RLock()
 
-        # make sure there is a AllSources section in the settings
-        sett = settings.get_settings()
-        if not self._class_name() in sett:
-            sett.update({self._class_name():{}})
+        self._sett = {}
+
+        # make sure there is a AllSources section in the cache
+        self._sett.update({self._class_name():{}})
 
         # make sure there is a "prices" subsection in the AllSources section
-        if not "prices" in sett[self._class_name()]:
-            sett[self._class_name()].update({"prices": {}})
+        self._sett[self._class_name()].update({"prices": {}})
 
         # make sure there is a "sources" subsection in the AllSources section
-        if not "sources" in sett[self._class_name()]:
-            sett[self._class_name()].update({"sources": {}})
-
-        settings.set_settings(sett)
+        self._sett[self._class_name()].update({"sources": {}})
 
         # handles to price sources
         self._sources = {}
@@ -639,15 +640,13 @@ class AllSources(PriceSource):
         """
         Associates a source with a market pair in the AllSources cache
         """
-        sett = settings.get_settings()
-        sources = sett[self._class_name()]["sources"]
+        sources = self._sett[self._class_name()]["sources"]
         if not mkt_pair in sources:
             sources.update({mkt_pair:[source_name]})
         else:
             source_set = set(sources[mkt_pair])
             source_set.add(source_name)
             sources[mkt_pair] = list(source_set)
-        settings.set_settings(sett)
         pricedb.store_sourceentry(source_name, mkt_pair)
 
 
@@ -657,8 +656,7 @@ class AllSources(PriceSource):
         particular market pair known by a source.
         """
         self._store_source(source_name, mkt_pair)
-        sett = settings.get_settings()
-        prices = sett[self._class_name()]["prices"]
+        prices = self._sett[self._class_name()]["prices"]
         if not source_name in prices:
             prices.update({source_name:{}})
         if not mkt_pair in prices[source_name]:
@@ -671,18 +669,16 @@ class AllSources(PriceSource):
             price_list[-1] = (now_t, price)
         else:
             price_list.append((now_t, price))
-        settings.set_settings(sett)
         pricedb.store_price(source_name, mkt_pair, price, now_dt)
 
 
     def _has_stored_price(self, mkt_pair):
         """
         Returns whether a price for the specified market pair has been
-        recorded.
+        recorded either in the cache or in the database.
         """
-        sett = settings.get_settings()
-        sources = sett[self._class_name()]["sources"]
-        prices = sett[self._class_name()]["prices"]
+        sources = self._sett[self._class_name()]["sources"]
+        prices = self._sett[self._class_name()]["prices"]
         if mkt_pair in sources:
             for source in sources[mkt_pair]:
                 if not source in prices:
@@ -690,13 +686,12 @@ class AllSources(PriceSource):
                 if not mkt_pair in prices[source]:
                     continue
                 return True
-        return False
+        return pricedb.has_stored_price(mkt_pair)
 
 
     def _get_stored_last_price_pairs(self, mkt_pair):
-        sett = settings.get_settings()
-        sources = sett[self._class_name()]["sources"]
-        prices = sett[self._class_name()]["prices"]
+        sources = self._sett[self._class_name()]["sources"]
+        prices = self._sett[self._class_name()]["prices"]
         if not mkt_pair in sources:
             raise PriceSourceError(
                 "%s: no stored market %s" % (self._class_name(), mkt_pair)
@@ -715,6 +710,12 @@ class AllSources(PriceSource):
                 )
             last_price = price_seq[-1]
             price_list.append(last_price)
+
+        # check the database too
+        for last_price in pricedb.get_last_price_pairs(mkt_pair):
+            last_price[0] = (last_price[0]-datetime.datetime(1970,1,1)).total_seconds()
+            price_list.append(last_price)
+        
         return price_list
 
 
@@ -784,7 +785,7 @@ class AllSources(PriceSource):
         return mkt_srcs
 
 
-    def get_price(self, from_asset, to_asset, amount = 1.0, get_last=False):
+    def get_price(self, from_asset, to_asset, amount=1.0, get_last=False, do_store=True):
         """
         Returns price detemrined as an average across all known sources.
         If get_last is True, this will return the last price recorded if one
@@ -805,16 +806,16 @@ class AllSources(PriceSource):
         # prices from the same sources as before. Otherwise, just try all sources and record
         # the one that succeeds. TODO: avoid having to try all sources in the first place.
         prices = []
-        sett = settings.get_settings()
-        sources = sett[self._class_name()]["sources"]
-        prices_d = sett[self._class_name()]["prices"]
+        sources = self._sett[self._class_name()]["sources"]
+        prices_d = self._sett[self._class_name()]["prices"]
         with self._lock:
             if mkt_pair in sources:
                 for source_name in sources[mkt_pair]:
                     try:
                         price = self._sources[source_name].get_price(from_asset, to_asset, amount)
                         prices.append(price)
-                        self._store_price(source_name, mkt_pair, price / amount)
+                        if do_store:
+                            self._store_price(source_name, mkt_pair, price / amount)
                     except PriceSourceError:
                         pass # TODO: might want to log this error
             else:
@@ -822,7 +823,8 @@ class AllSources(PriceSource):
                     try:
                         price = source.get_price(from_asset, to_asset, amount)
                         prices.append(price)
-                        self._store_price(source_name, mkt_pair, price / amount) 
+                        if do_store:
+                            self._store_price(source_name, mkt_pair, price / amount) 
                     except PriceSourceError:
                         pass
 
@@ -856,10 +858,8 @@ class AllSources(PriceSource):
 
         # purge all prices for now
         # TODO: finish me!
-        sett = settings.get_settings()
-        sett[self._class_name()].update({"prices": {}})
-        sett[self._class_name()].update({"sources": {}})
-        settings.set_settings(sett)
+        self._sett[self._class_name()].update({"prices": {}})
+        self._sett[self._class_name()].update({"sources": {}})
 
 
     def get_num_prices(self, **kwargs):

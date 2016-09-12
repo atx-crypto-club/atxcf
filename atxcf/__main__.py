@@ -12,7 +12,7 @@ import cmd
 
 def _webapi_enabled():
     """
-    Returns whether webapi is enabled. It is true by default.
+    Returns whether webapi is enabled. It is false by default.
     """
     enabled = False 
     try:
@@ -23,7 +23,7 @@ def _webapi_enabled():
 
 def _agent_enabled():
     """
-    Returns whether the agent slackbot is enabled. It is true by default.
+    Returns whether the agent slackbot is enabled. It is false by default.
     """
     enabled = False
     try:
@@ -55,12 +55,6 @@ while len(argv) > 0:
         break
     argv = argv[1:]
 
-if len(argv) > 0:
-    print str(cmd._run_cmd(*argv))
-else:
-    cmds = cmd.get_commands() + ['webapi', 'nowebapi', 'agent', 'noagent']
-    print "Known commands: {}".format(sorted(cmds))
-
 def _launch_webapi():
     webapi.main(argv[1:])
 
@@ -76,3 +70,9 @@ if agent_enabled:
     print "Starting slackbot agent thread..."
     agent_thread.start()
 
+
+if len(argv) > 0:
+    print str(cmd._run_cmd(*argv))
+else:
+    cmds = cmd.get_commands() + ['webapi', 'nowebapi', 'agent', 'noagent']
+    print "Known commands: {}".format(sorted(cmds))

@@ -40,8 +40,6 @@ def get_default_options():
     Default atxcf bot runtime options.
     """
     return {
-        # limit price updates to 60 second intervals
-        "price_update_interval": 60,
         # try to keep the settings file synced every 5 minutes
         "settings_update_interval": 60*5
     }
