@@ -2,12 +2,13 @@ import argparse
 
 from flask import Flask
 from flask.ext.cors import CORS
-#from flask import jsonify
+from flask import jsonify
 
 import PriceNetwork
 import settings
 import cmd
 import sys
+import logging
 
 import coinmarketcap
 
@@ -71,6 +72,18 @@ def get_help(cmd_help):
     return "<pre>%s</pre>" % cmd.get_help(cmd_help)
 
 
+@app.route('/coinbase_webhook', methods=["POST"])
+def coinbase_webhook():
+    if request.method == "POST":
+        json_dict = request.get_json()
+	# TODO: do stuff with incoming data for the fund
+	logging.info(jsonify(json_dict))
+        return jsonify(json_dict)
+    else:
+        return """<html><body>
+        <p>bollocks</p>
+        </body></html>"""
+
 def _get_port():
     """
     Returns the port from the settings, and sets a reasonable default if
@@ -101,6 +114,7 @@ def main(argv=[]):
     # get resonable defaults
     host = _get_host()
     port = _get_port()
+    logfile = "webapi.log"
 
     # override with command line args
     argc = len(argv)
@@ -108,7 +122,10 @@ def main(argv=[]):
         host = argv[0]
     if argc > 1:
         port = argv[1]
-     
+    if argc > 2:
+        logfile = argv[2]
+
+    logging.basicConfig(filename=logfile, level=logging.DEBUG)
     app.run(host=host, port=port, threaded=True)
 
 

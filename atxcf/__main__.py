@@ -3,6 +3,7 @@
 
 import webapi
 import settings
+from settings import get_settings_option
 from . import start_agent
 import PriceNetwork
 
@@ -12,31 +13,28 @@ import cmd
 
 def _webapi_enabled():
     """
-    Returns whether webapi is enabled. It is true by default.
+    Returns whether webapi is enabled. It is False by default.
     """
-    enabled = False 
-    try:
-        enabled = settings.get_option("webapi_enabled")
-    except settings.SettingsError:
-        settings.set_option("webapi_enabled", enabled)
-    return enabled 
+    return get_settings_option("webapi_enabled", default=False)
 
 def _agent_enabled():
     """
-    Returns whether the agent slackbot is enabled. It is true by default.
+    Returns whether the agent slackbot is enabled. It is False by default.
     """
-    enabled = False
-    try:
-        enabled = settings.get_option("agent_enabled")
-    except settings.SettingsError:
-        settings.set_option("agent_enabled", enabled)
-    return enabled 
+    return get_settings_option("agent_enabled", default=False)
 
+def _tornado_enabled():
+    """
+    Returns whether we are using the tornado server for web api stuff.
+    If this is true, it will override using the flask webapi
+    """
+    return get_settings_option("tornado_enabled", default=False)
 
 PriceNetwork.init() # avoid lazy init
 
 webapi_enabled = _webapi_enabled()
 agent_enabled = _agent_enabled()
+tornado_enabled = _tornado_enabled()
 
 argv = sys.argv[1:]
 
@@ -51,6 +49,9 @@ while len(argv) > 0:
         agent_enabled = True
     elif arg == "noagent":
         agent_enabled = False
+    elif arg == "tornado":
+	tornado_enabled = True
+	webapi_enabled = False
     else:
         break
     argv = argv[1:]
@@ -65,14 +66,19 @@ def _launch_webapi():
     webapi.main(argv[1:])
 
 # webapi thread
-wapi_thread = threading.Thread(target=_launch_webapi)
+wapi_thread = None
 if webapi_enabled:
+    wapi_thread = threading.Thread(target=_launch_webapi)
     print "Starting webapi thread..."
     wapi_thread.start()
 
 # slackbot atxcf agent thread
-agent_thread = threading.Thread(target=start_agent)
+agent_thread = None
 if agent_enabled:
+    agent_thread = threading.Thread(target=start_agent)
     print "Starting slackbot agent thread..."
     agent_thread.start()
 
+if tornado_enabled:
+    import tornado_api
+    tornado_api.main()

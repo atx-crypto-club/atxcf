@@ -81,8 +81,15 @@ def get_commands(message):
 
 
 def main():
-    bot = Bot()
-    bot.run()
+    restart = True
+    while restart:
+        try:
+            bot = Bot()
+            bot.run()
+        except TypeError as e:
+            pass
+        except Exception:
+            restart = False    
 
 
 if __name__ == "__main__":

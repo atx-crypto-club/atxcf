@@ -13,6 +13,7 @@ Module deps:
   - coinmarketcap
   - filelock
   - peewee
+  - pymemcache
   - krakenex (optional for now)
   - mysqldb (optional)
 

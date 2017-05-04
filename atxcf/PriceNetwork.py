@@ -73,23 +73,9 @@ class PriceNetwork(PriceSource.AllSources):
 
         TODO: deal with possible cycles (baskets containing themselves...)
         """
-        mkt_pair_str = "{0}/{1}".format(from_asset, to_asset)
-        is_price_cached = self._has_stored_price(mkt_pair_str)
-        interval = settings.get_option("price_update_interval")
-        last_price = None
-
-        if is_price_cached:
-            when_cached = self._get_last_stored_price_time(mkt_pair_str)
-            if get_last or time.time() - when_cached <= interval:
-                last_price = self._get_stored_price(mkt_pair_str) * value
-
-        if not last_price and self._is_basket(from_asset):
+        if self._is_basket(from_asset):
             return self._get_basket_value(from_asset, to_asset) * value
-
-        if not last_price:
-            last_price = super(PriceNetwork, self).get_price(from_asset, to_asset, value)
-
-        return last_price
+	return super(PriceNetwork, self).get_price(from_asset, to_asset, value)
 
 
     def _generate_graph(self):
@@ -268,3 +254,10 @@ def _get_price_network():
     if not _pn:
         init()
     return _pn
+
+
+def instance():
+    """
+    Deprecates _get_price_network.
+    """
+    return _get_price_network()

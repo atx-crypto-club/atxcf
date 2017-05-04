@@ -18,7 +18,7 @@ class SettingsError(RuntimeError):
 _js_settings = {}
 _js_settings_ts = time.time()
 _js_settings_lock = threading.RLock()
-
+_prevent_write = False
 
 def _get_settings_filename():
     varname = "ATXCF_SETTINGS"
@@ -79,7 +79,6 @@ def get_settings():
     it loads it from disk.
     """
     global _js_settings
-    global _js_settings_ts
     global _js_settings_lock
     global _js_filelock
     ret_settings = None
@@ -94,7 +93,6 @@ def get_settings():
                 with _js_filelock:
                     try:
                         _js_settings = json.load(open(fn))
-                        _js_settings_ts = time.time()
                     except IOError as e:
                         raise SettingsError("Error loading %s: %s" % (fn, e.message))
     if doInit:
@@ -125,7 +123,6 @@ def reload_settings():
     global _js_settings_lock
     with _js_settings_lock:
         _js_settings = {}
-        _js_settings_ts = time.time()
     return get_settings()
 
 
@@ -133,6 +130,9 @@ def write_settings():
     global _js_filelock
     global _js_settings_ts
     global _js_settings_lock
+    global _prevent_write
+    if _prevent_write:
+        return
     settings = get_settings()
     with _js_settings_lock:
         settings["last_updated"] = _js_settings_ts
@@ -140,7 +140,8 @@ def write_settings():
         fn = _get_settings_filename()
         try:
             with open(fn, 'w') as f:
-                json.dump(settings, f)
+                json.dump(settings, f, sort_keys=True,
+                          indent=4, separators=(',', ': '))
         except IOError as e:
             raise SettingsError("Error writing %s: %s" % (fn, e.message))
 
@@ -152,7 +153,7 @@ def get_option(option):
     settings = get_settings()
     _check_options_section(settings)
     if not option in settings["options"]:
-        raise SettingsError("No such option %s in %s" % (option, _get_settings_filename()))
+	raise SettingsError("No such option %s in %s" % (option, _get_settings_filename()))
     return settings["options"][option]
 
 
@@ -196,6 +197,19 @@ def remove_option(option):
         raise SettingsError("Missing option %s in %s" % (option, _get_settings_filename()))
     del settings["options"][option]
     set_settings(settings)
+
+
+def get_settings_option(option_name, default=None):
+    """
+    Convenience function to get an option and set a
+    default if it doesn't exist.
+    """
+    value = default
+    try:
+        value = get_option(option_name)
+    except SettingsError:
+        set_option(option_name, value)
+    return value
 
 
 def _check_credentials_section(settings):
@@ -245,6 +259,17 @@ def remove_creds(site):
     set_settings(settings)
 
 
+def has_creds(site):
+    """
+    Returns whether a site has credentials in the settings file
+    """
+    settings = get_settings()
+    _check_credentials_section(settings)
+    if not site in settings["credentials"]:
+        return False
+    return True
+
+
 def get_all_creds():
     """
     Returns the whole credentials section.
@@ -264,6 +289,21 @@ def get_last_updated():
     if not "last_updated" in settings:
         raise SettingsError("Missing last_updated field in %s" % _get_settings_filename())
     return settings["last_updated"]
+
+
+class BlockWrite(object):
+    """
+    Use this with a 'with' clause to block writing the settings file in case
+    you want to make several changes and not have the settings file saved
+    in between those changes.
+    """
+    def __enter__(self):
+        global _prevent_write
+        _prevent_write = True
+
+    def __exit__(self, type, value, traceback):
+        global _prevent_write
+        _prevent_write = False
     
 
 import atexit

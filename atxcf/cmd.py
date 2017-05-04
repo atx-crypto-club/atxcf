@@ -5,6 +5,7 @@ Main set of commands known by the atxcf bot.
 from PriceNetwork import _get_price_network
 import PriceNetwork
 import settings
+import memcached_client
 
 import coinmarketcap
 
@@ -44,7 +45,7 @@ def get_price(*args):
     - 3 == len(args) -> (value, from_asset, to_asset)
     """
 
-    def _do_get_price(value, trade_pair_str, get_last=False):
+    def _do_get_price(value, trade_pair_str, get_last=False):        
         asset_strs = string.split(trade_pair_str,"/",1)
         if len(asset_strs) != 2:
             raise CmdError("Invalid trade pair %s" % trade_pair_str)
@@ -60,7 +61,12 @@ def get_price(*args):
 
         with Mutex():
             pn = _get_price_network()
-            return pn.get_price(asset_strs[0], asset_strs[1], value, get_last)
+            
+            price = pn.get_price(asset_strs[0], asset_strs[1], value, get_last)
+            if not price:
+                price = float('NaN')
+            
+            return price
 
     value = 1.0
     trade_pair_str = ""
