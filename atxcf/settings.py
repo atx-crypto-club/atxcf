@@ -29,7 +29,7 @@ def _get_settings_filename():
 
 
 def _get_settings_lockfile_name():
-    return '.' + _get_settings_filename() + ".lock"
+    return _get_settings_filename() + ".lock"
 
     
 _js_filelock = filelock.FileLock(_get_settings_lockfile_name())
@@ -40,8 +40,6 @@ def get_default_options():
     Default atxcf bot runtime options.
     """
     return {
-        # limit price updates to 60 second intervals
-        "price_update_interval": 60,
         # try to keep the settings file synced every 5 minutes
         "settings_update_interval": 60*5
     }

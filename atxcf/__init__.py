@@ -67,8 +67,9 @@ from .settings import (
 
 from .cmd import (
     get_symbols, get_price, get_markets, get_top_coins, CmdError,
-    get_commands, get_help, purge_cache
+    get_commands, get_help, keep_prices_updated
 )
 
 from .agent import main as start_agent
 from .webapi import main as start_webapi
+from .tornado_api import main as start_tornado_api

@@ -5,7 +5,7 @@ from flask.ext.cors import CORS
 from flask import jsonify
 
 import PriceNetwork
-import settings
+from settings import get_settings_option, has_option, get_option
 import cmd
 import sys
 import logging
@@ -84,17 +84,13 @@ def coinbase_webhook():
         <p>bollocks</p>
         </body></html>"""
 
+
 def _get_port():
     """
     Returns the port from the settings, and sets a reasonable default if
     it isn't there.
     """
-    port = 1337
-    try:
-        port = settings.get_option("port")
-    except settings.SettingsError:
-        settings.set_option("port", port)
-    return port
+    return get_settings_option("port", default=1337)
 
 
 def _get_host():
@@ -102,19 +98,23 @@ def _get_host():
     Returns the host from the settings, and sets a reasonable default if
     it isn't there.
     """
-    host = "0.0.0.0" # bind to all interfaces
-    try:
-        host = settings.get_option("host")
-    except settings.SettingsError:
-        settings.set_option("host", host)
-    return host
+    return get_settings_option("host", default="0.0.0.0")
+
+
+def _get_logfile():
+    """
+    Returns the logfile from the setting. If unset, returns None.
+    """
+    if has_option("logfile"):
+	return get_option("logfile")
+    return None
 
 
 def main(argv=[]):
     # get resonable defaults
     host = _get_host()
     port = _get_port()
-    logfile = "webapi.log"
+    logfile = _get_logfile()
 
     # override with command line args
     argc = len(argv)
@@ -125,7 +125,8 @@ def main(argv=[]):
     if argc > 2:
         logfile = argv[2]
 
-    logging.basicConfig(filename=logfile, level=logging.DEBUG)
+    if logfile:
+	logging.basicConfig(filename=logfile, level=logging.DEBUG)
     app.run(host=host, port=port, threaded=True)
 
 

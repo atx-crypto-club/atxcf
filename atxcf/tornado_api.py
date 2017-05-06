@@ -1,5 +1,7 @@
-from tornado import websocket, web, ioloop
+import os
+from tornado import websocket, web, ioloop, httpserver
 import json
+import ssl
 
 import cmd
 from settings import get_settings_option
@@ -31,9 +33,21 @@ class SocketHandler(websocket.WebSocketHandler):
 	    cmd_str = data["cmd"]
 	    
 	if cmd_str == "get_price":
-	    from_asset = data["from_asset"]
-	    to_asset = data["to_asset"]
-	    value = data["value"]
+	    from_asset = None
+	    to_asset = None
+	    if "pair" in data:
+		pair = data["pair"]
+		pair = pair.split("/", 1)
+		if len(pair) < 2:
+		    return # TODO: log this
+		from_asset = pair[0].strip()
+		to_asset = pair[1].strip()		
+	    else:
+		from_asset = data["from_asset"]
+		to_asset = data["to_asset"]
+	    value = 1.0
+	    if "value" in data:
+		value = data["value"]
 	    price = cmd.get_price(value, from_asset, to_asset)
 	    data["price"] = price
 	    self.write_message(json.dumps(data))
@@ -43,6 +57,9 @@ class SocketHandler(websocket.WebSocketHandler):
 	    self.write_message(json.dumps(mkts))
 
 	elif cmd_str == "get_top_coins":
+	    top = 10
+	    if "top" in data:
+		top = data["top"]
 	    top_symbols = cmd.get_top_coins(top)
 	    self.write_message(json.dumps(top_symbols)) 
 
@@ -63,8 +80,16 @@ class ApiHandler(web.RequestHandler):
 	cmd_str = self.get_argument("cmd")
 	
 	if cmd_str == "get_price":
-	    from_asset = self.get_argument("from_asset")
-	    to_asset = self.get_argument("to_asset")
+	    pair = self.get_argument("pair", default=None)
+	    from_asset = None
+	    to_asset = None
+	    if not pair:
+		from_asset = self.get_argument("from_asset")
+		to_asset = self.get_argument("to_asset")
+	    else:
+		pair = pair.split("/", 1)
+		from_asset = pair[0].strip()
+		to_asset = pair[1].strip()
 	    value = self.get_argument("value", default=1.0)
 	    price = cmd.get_price(value, from_asset, to_asset)
 	    self.write(str(price))
@@ -113,15 +138,39 @@ def _get_host():
     return get_settings_option("tornado_host", default='') # default, bind to all interfaces
 
 
+def _get_certfile():
+    """
+    Returns the certificate file for SSL or a resonable default if none
+    is set.
+    """
+    return get_settings_option("tornado_certfile", default="cert.pem")
+
+
+def _get_keyfile():
+    """
+    Returns the key file for SSL or a reasonable default if none is set.
+    """
+    return get_settings_option("tornado_keyfile", default="privkey.pem")
+
+# if certificate files are found, enable ssl mode
+has_cert = os.path.isfile(_get_certfile())
+has_key = os.path.isfile(_get_keyfile())
+do_ssl = has_cert and has_key
+ssl_options = None
+if do_ssl:
+    ssl_options = {
+	"certfile": _get_certfile(),
+	"keyfile": _get_keyfile()
+    }
+
 app = web.Application([
     (r'/', IndexHandler),
     (r'/ws', SocketHandler),
     (r'/api', ApiHandler),
 ])
 
-
 def main():
-    app.listen(_get_port(), address=_get_host())
+    app.listen(_get_port(), address=_get_host(), ssl_options=ssl_options)
     ioloop.IOLoop.instance().start()
 
 

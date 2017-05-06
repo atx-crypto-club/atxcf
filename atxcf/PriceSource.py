@@ -12,6 +12,7 @@ import settings
 from settings import (get_creds, has_creds)
 import pricedb
 import memcached_client
+from settings import get_settings_option, get_settings, set_settings
 
 import requests
 import re
@@ -37,6 +38,9 @@ class PriceSource(object):
     """
     The basic asset price querying interface.
     """
+    def __init__(self):
+	# limit price updates to 60 second intervals
+	self._update_interval = get_settings_option("price_update_interval", 60)
 
     def get_symbols(self):
         """
@@ -109,13 +113,29 @@ class Bitfinex(PriceSource):
 
     def __init__(self):
         super(Bitfinex, self).__init__()
-        self.bfx = bitfinex.Client()
-        try:
-            self.bfx_symbols = self.bfx.symbols()
-        except:
-            raise PriceSourceError("%s: Error getting symbols from bitfinex" % self._class_name())
-        self._lock = threading.RLock()
-    
+	self.bfx = None
+	self.bfx_symbols = None
+	self._lock = threading.RLock()
+
+
+    def _bfx_client(self):
+	if not self.bfx:
+	    self.bfx = bitfinex.Client()
+	return self.bfx
+
+    def _bfx_symbols(self):
+	if not self.bfx_symbols:
+	    memcached_key = self._class_name() + ".bfx_symbols"
+	    if memcached_client.has_key(memcached_key):
+		self.bfx_symbols = memcached_client.get(memcached_key)
+	    else:
+		try:
+		    self.bfx_symbols = self._bfx_client().symbols()
+		    memcached_client.set(memcached_key, self.bfx_symbols)
+		except:
+		    raise PriceSourceError("%s: Error getting symbols from bitfinex" % self._class_name())
+	return self.bfx_symbols
+
 
     def get_symbols(self):
         """
@@ -123,7 +143,7 @@ class Bitfinex(PriceSource):
         """
         s = []
         with self._lock:
-            s = self.bfx_symbols
+            s = self._bfx_symbols()
         ss = list(set([i[:3] for i in s] + [i[3:] for i in s]))
         return [i.upper() for i in ss]
 
@@ -140,7 +160,7 @@ class Bitfinex(PriceSource):
         List of market pairs at Bifinex.
         """
         with self._lock:
-            return [i.upper()[:3] + '/' + i.upper()[3:] for i in self.bfx_symbols]
+            return [i.upper()[:3] + '/' + i.upper()[3:] for i in self._bfx_symbols()]
 
 
     def get_price(self, from_asset, to_asset, amount=1.0):
@@ -159,14 +179,14 @@ class Bitfinex(PriceSource):
 
         bfx_symbol = from_asset_lower + to_asset_lower
         with self._lock:
-            if not bfx_symbol in self.bfx_symbols:
+            if not bfx_symbol in self._bfx_symbols():
                 inverse = True
                 bfx_symbol = to_asset_lower + from_asset_lower
-                if not bfx_symbol in self.bfx_symbols:
+                if not bfx_symbol in self._bfx_symbols():
                     raise PriceSourceError("%s: Missing market" % self._class_name())
 
             try:
-                price = float(self.bfx.ticker(bfx_symbol)["last_price"])
+                price = float(self._bfx_client().ticker(bfx_symbol)["last_price"])
             except requests.exceptions.ReadTimeout:
                 raise PriceSourceError("%s: Error getting last_price: requests.exceptions.ReadTimeout" % self._class_name())
 
@@ -191,23 +211,33 @@ class Poloniex(PriceSource):
 
     def __init__(self):
         super(Poloniex, self).__init__()
-        api_key, api_secret = get_creds(self._class_name())
-        self._pol = poloniex.poloniex(api_key, api_secret)
-        try:
-            self._pol_ticker = self._pol.returnTicker()
-        except:
-            raise PriceSourceError("%s: Error getting ticker" % self._class_name())
+        self._pol = None
+	self._pol_ticker = None
         self._pol_ticker_ts = time.time()
         self._lock = threading.RLock()
+
+    def _get_pol(self):
+	if not self._pol:
+	    api_key, api_secret = get_creds(self._class_name())
+	    self._pol = poloniex.poloniex(api_key, api_secret)
+	return self._pol
+
+    def _get_pol_ticker(self):
+	if not self._pol_ticker:
+	    try:
+		self._pol_ticker = self._get_pol().returnTicker()
+		self._pol_ticker_ts = time.time()
+	    except:
+		raise PriceSourceError("%s: Error getting ticker" % self._class_name())
+	return self._pol_ticker
 
 
     def _update_ticker(self):
         with self._lock:
             # update ticker if it is older than the specified amount of seconds.
-            timeout = settings.get_option("price_update_interval")
+            timeout = self._update_interval
             if time.time() - self._pol_ticker_ts > timeout:
-                self._pol_ticker = self._pol.returnTicker()
-                self._pol_ticker_ts = time.time()
+		self._pol_ticker = None
 
 
     def get_symbols(self):
@@ -215,11 +245,16 @@ class Poloniex(PriceSource):
         List of tradable symbols at Poloniex
         """
         symbol_set = set()
+	key = self._class_name() + ".symbols"
+	if memcached_client.has_key(key):
+	    return memcached_client.get(key)
         with self._lock:
-            for cur in self._pol_ticker.iterkeys():
+            for cur in self._get_pol_ticker().iterkeys():
                 for item in cur.split("_"):
                     symbol_set.add(item)
-        return list(symbol_set)
+	symbols = list(symbol_set)
+	memcached_client.set(key, symbols)
+        return symbols
 
 
     def get_base_symbols(self):
@@ -227,11 +262,16 @@ class Poloniex(PriceSource):
         List of base currencies at Poloniex
         """
         symbol_set = set()
+	key = self._class_name() + ".base_symbols"
+	if memcached_client.has_key(key):
+	    return memcached_client.get(key)
         with self._lock:
-            for cur in self._pol_ticker.iterkeys():
+            for cur in self._get_pol_ticker().iterkeys():
                 items = cur.split("_")
                 symbol_set.add(items[0]) # the first item is the base currency
-        return list(symbol_set)
+	symbols = list(symbol_set)
+	memcached_client.set(key, symbols)
+	return symbols
 
 
     def get_markets(self):
@@ -239,10 +279,14 @@ class Poloniex(PriceSource):
         List of all trade pairs
         """
         mkts = []
+	key = self._class_name() + ".markets"
+	if memcached_client.has_key(key):
+	    return memcached_client.get(key)	
         with self._lock:
-            for cur in self._pol_ticker.iterkeys():
+            for cur in self._get_pol_ticker().iterkeys():
                 pair = cur.split("_")
                 mkts.append(pair[1] + "/" + pair[0])
+	memcached_client.set(key, mkts)
         return mkts
 
 
@@ -261,14 +305,14 @@ class Poloniex(PriceSource):
         to_asset = to_asset.upper()
         pol_symbol = to_asset + "_" + from_asset
         with self._lock:
-            if not pol_symbol in self._pol_ticker.iterkeys():
+	    self._update_ticker()
+	    ticker = self._get_pol_ticker()
+            if not pol_symbol in ticker.iterkeys():
                 inverse = True
                 pol_symbol = from_asset + "_" + to_asset
-                if not pol_symbol in self._pol_ticker.iterkeys():
+                if not pol_symbol in ticker.iterkeys():
                     raise PriceSourceError("%s: Missing market" % self._class_name())
-
-            self._update_ticker()
-            price = float(self._pol_ticker[pol_symbol]["last"])
+            price = float(ticker[pol_symbol]["last"])
 
         if inverse:
             try:
@@ -301,7 +345,7 @@ class CryptoAssetCharts(PriceSource):
     def _update_info(self):
         with self._lock:
             # if it is older than timeout seconds, do another request.
-            timeout = settings.get_option("price_update_interval")
+	    timeout = self._update_interval
             if time.time() - self._response_ts > timeout:
                 self._response = requests.get(self._req_url)
                 self._response_ts = time.time()
@@ -399,41 +443,73 @@ class Bittrex(PriceSource):
 
     def __init__(self):
         super(Bittrex, self).__init__()
-        api_key, api_secret = get_creds(self._class_name())
-        self._bittrex = bittrex.Bittrex(api_key, api_secret)
-        try:
-            currencies = self._bittrex.get_currencies()
-        except Exception as e:
-            raise PriceSourceError("%s: Error getting currency list :: %s" % (self._class_name(), e.message))
-        self._symbols = [item["Currency"] for item in currencies["result"]]
-        try:
-            self._markets = self._bittrex.get_markets()["result"]
-        except:
-            raise PriceSourceError("%s: Error getting markets" % self._class_name())
-        self._base_symbols = list(set([item["BaseCurrency"] for item in self._markets]))
-        self._price_map = {}
+
+	self._bittrex = None
+	self._symbols = None
+	self._markets = None
+	self._base_symbols = None
+	self._price_map = {}
         self._ticker_ts = time.time()
         self._lock = threading.RLock()
 
         self._update_price_map(True)
 
 
+    def _client(self):
+	if not self._bittrex:
+	    api_key, api_secret = get_creds(self._class_name())
+	    self._bittrex = bittrex.Bittrex(api_key, api_secret)
+	return self._bittrex
+
+
+    def _get_symbols(self):
+	if not self._symbols:
+	    try:
+		currencies = self._client().get_currencies()
+	    except Exception as e:
+		raise PriceSourceError("%s: Error getting currency list :: %s" % (self._class_name(), e.message))
+	    self._symbols = [item["Currency"] for item in currencies["result"]]
+	return self._symbols
+
+
+    def _get_markets(self):
+	if not self._markets:
+	    try:
+		self._markets = self._client().get_markets()["result"]
+	    except:
+		raise PriceSourceError("%s: Error getting markets" % self._class_name())
+	return self._markets
+
+
+    def _get_base_symbols(self):
+	if not self._base_symbols:
+	    self._base_symbols = list(set([item["BaseCurrency"] for item in self._get_markets()]))
+	return self._base_symbols
+
+
+    def _get_price_map(self):
+	if not self._price_map:
+	    result = self._client().get_market_summaries()["result"]
+	    prices = [(res["MarketName"], res["Last"]) for res in result]
+	    for market, price in prices:
+		self._price_map[market] = (price, time.time())
+	    self._ticker_ts = time.time()
+	return self._price_map
+	
+
     def _update_price_map(self, force=False):
         with self._lock:
             # update ticker if it is older than timout seconds.
-            timeout = settings.get_option("price_update_interval")
+	    timeout = self._update_interval
             if force or time.time() - self._ticker_ts > timeout:
-                result = self._bittrex.get_market_summaries()["result"]
-                prices = [(res["MarketName"], res["Last"]) for res in result]
-                for market, price in prices:
-                    self._price_map[market] = (price, time.time())
-
+		self._price_map = {}
+		
 
     def _get_price(self, market):
         self._update_price_map()
         with self._lock:
-            if not market in self._price_map:
-                ticker = self._bittrex.get_ticker(market)["result"]
+            if not market in self._get_price_map():
+                ticker = self._client().get_ticker(market)["result"]
                 if not ticker:
                     raise PriceSourceError("%s: No such market %s" % (self._class_name(), market))
                 if ticker["Last"] == None:
@@ -442,15 +518,22 @@ class Bittrex(PriceSource):
                 self._price_map[market] = (price, time.time())
                 return price
             else:
-                return float(self._price_map[market][0])
+                return float(self._get_price_map()[market][0])
 
 
     def get_symbols(self):
         """
         Returns list of asset/currency symbols tradable at this exchange.
         """
-        with self._lock:
-            return self._symbols
+	symbols = None
+	key = self._class_name() + ".symbols"
+	if memcached_client.has_key(key):
+	    symbols = memcached_client.get(key)
+	else:
+	    with self._lock:
+		symbols = self._get_symbols()
+		memcached_client.set(key, symbols)
+	return symbols
 
 
     def get_base_symbols(self):
@@ -458,8 +541,15 @@ class Bittrex(PriceSource):
         Returns list of base currency symbols used. For instance, in the
         trade pair XBT/USD, the base symbol is USD.
         """
-        with self._lock:
-            return self._base_symbols
+	base_symbols = None
+	key = self._class_name() + ".base_symbols"
+	if memcached_client.has_key(key):
+	    base_symbols = memcached_client.get(key)
+	else:
+	    with self._lock:
+		base_symbols = self._get_base_symbols()
+		memcached_client.set(key, base_symbols)
+	return base_symbols
 
 
     def get_markets(self):
@@ -467,7 +557,7 @@ class Bittrex(PriceSource):
         Returns all markets at bittrex
         """
         with self._lock:
-            return [str(c["MarketCurrency"]+"/"+c["BaseCurrency"]) for c in self._markets]
+            return [str(c["MarketCurrency"]+"/"+c["BaseCurrency"]) for c in self._get_markets()]
 
 
     def get_price(self, from_asset, to_asset, amount=1.0):
@@ -530,10 +620,10 @@ class Conversions(PriceSource):
         }
 
         # read conversions from settings file
-        sett = settings.get_settings()
+        sett = get_settings()
         if not "Conversions" in sett:
             sett["Conversions"] = self._mapping
-            settings.set_settings(sett)
+            set_settings(sett)
         else:
             conv = sett["Conversions"]
             self._mapping.update(conv)
@@ -865,7 +955,7 @@ class AllSources(PriceSource):
         """
         mkt_pair = "{0}/{1}".format(from_asset, to_asset)
         print "getting price for", mkt_pair
-        interval = settings.get_option("price_update_interval")
+	interval = self._update_interval
         stored_price = None
         if self._has_stored_price(mkt_pair):
 	    print "has stored price for", mkt_pair

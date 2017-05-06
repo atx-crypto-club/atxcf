@@ -30,11 +30,20 @@ def _tornado_enabled():
     """
     return get_settings_option("tornado_enabled", default=False)
 
+
+def _price_updater_enabled():
+    """
+    Returns wether we should start the price updater thread.
+    """
+    return get_settings_option("price_updater_thread_enabled", default=False)
+
+
 PriceNetwork.init() # avoid lazy init
 
 webapi_enabled = _webapi_enabled()
 agent_enabled = _agent_enabled()
 tornado_enabled = _tornado_enabled()
+price_updater_enabled = _price_updater_enabled()
 
 argv = sys.argv[1:]
 
@@ -52,6 +61,10 @@ while len(argv) > 0:
     elif arg == "tornado":
 	tornado_enabled = True
 	webapi_enabled = False
+    elif arg == "updater":
+	price_updater_enabled = True
+    elif arg == "noupdater":
+	price_updater_enabled = False
     else:
         break
     argv = argv[1:]
@@ -59,7 +72,8 @@ while len(argv) > 0:
 if len(argv) > 0:
     print str(cmd._run_cmd(*argv))
 else:
-    cmds = cmd.get_commands() + ['webapi', 'nowebapi', 'agent', 'noagent']
+    cmds = cmd.get_commands() + ['webapi', 'nowebapi', 'agent', 'noagent',
+				 'tornado']
     print "Known commands: {}".format(sorted(cmds))
 
 def _launch_webapi():
@@ -79,6 +93,11 @@ if agent_enabled:
     print "Starting slackbot agent thread..."
     agent_thread.start()
 
+# price updater thread
+if price_updater_enabled:
+    cmd.keep_prices_updated()
+
+# tornado must run in the main thread
 if tornado_enabled:
     import tornado_api
     tornado_api.main()

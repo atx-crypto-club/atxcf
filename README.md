@@ -8,6 +8,7 @@ Module deps:
   - slackbot
   - flask
   - flask-cors
+  - tornado
   - pyquery
   - networkx
   - coinmarketcap

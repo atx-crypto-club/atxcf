@@ -9,3 +9,4 @@ filelock==2.0.5
 mysqldb==1.2.3
 peewee==??
 pymemcache=??
+tornado==??

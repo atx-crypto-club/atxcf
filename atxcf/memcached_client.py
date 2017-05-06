@@ -1,8 +1,7 @@
 import json
 import threading
 from pymemcache.client.base import Client
-import settings
-
+from settings import get_settings_option
 
 def json_serializer(key, value):
     if type(value) == str:
@@ -22,7 +21,7 @@ def enabled():
     """
     Returns whether we are using memcached or not.
     """
-    return settings.get_option("using_memcached")
+    return get_settings_option("using_memcached", True)
 
 
 def default_key_expiration():
@@ -30,14 +29,14 @@ def default_key_expiration():
     Returns the default number of seconds a key should
     persist in the cache.
     """
-    return int(settings.get_option("memcached_default_key_expiration"))
+    return int(get_settings_option("memcached_default_key_expiration", default=86400))
 
 
 def servers():
     """
     Returns a tuple of hostname, port pairs for the memcached servers used.
     """
-    return settings.get_option("memcached_servers")
+    return get_settings_option("memcached_servers", default=(("localhost", 11211),))
 
 
 _client_lock = threading.RLock()
@@ -53,6 +52,7 @@ def _get_client():
 
 # TODO: consider adding expiration times for keys
 #       that match a particular regex in the settings file.
+#       We might want certain keys to persist longer than others.
 def set(some_key, some_value, expire=None):
     if enabled():
         if not expire:
@@ -73,14 +73,3 @@ def get(some_key):
 
 def has_key(some_key):
     return get(some_key) != None
-
-
-# Initialize default setting options for memcached_client
-# if they aren't present.
-# TODO: clean this up
-if not settings.has_option("using_memcached"):
-    settings.set_option("using_memcached", True)
-if not settings.has_option("memcached_default_key_expiration"):
-    settings.set_option("memcached_default_key_expiration", 60)
-if not settings.has_option("memcached_servers"):
-    settings.set_option("memcached_servers", [("localhost", 11211)])
