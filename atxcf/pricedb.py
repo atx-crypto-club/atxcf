@@ -222,6 +222,39 @@ def get_source_type(source_name):
     return Source.get(Source.name == source_name).source_type
 
 
+def get_asset_names():
+    """
+    Returns a set of all the assets in the database.
+    """
+    assets = set()
+    for asset in Asset.select():
+        assets.add(asset.name)
+    return assets
+
+
+def get_source_names(mkt_pair=None):
+    """
+    Returns a set of all the source names in the database for sources that contain info
+    about the specified market pair string. If none, return all source names.
+    """
+    source_names = set()
+    if mkt_pair:
+        from_asset, to_asset = _get_assets_from_pair(mkt_pair)
+        from_asset_model = None
+        to_asset_model = None
+        for cur_asset in Asset.select().where(Asset.name == from_asset):
+            from_asset_model = cur_asset
+        for cur_asset in Asset.select().where(Asset.name == to_asset):
+            to_asset_model = cur_asset
+        for cur_se in SourceEntry.select().where(SourceEntry.from_asset == from_asset_model,
+                                                 SourceEntry.to_asset == to_asset_model):
+            source_names.add(cur_se.source.name)
+    else:
+        for cur_source in Source.select():
+            source_names.add(cur_source.name)
+    return source_names
+
+
 def store_sourceentry(source_name, mkt_pair):
     """
     Stores a source in the database.
@@ -243,7 +276,7 @@ def store_sourceentry(source_name, mkt_pair):
 
 def store_price(source_name, mkt_pair, price, price_time=datetime.datetime.now()):
     """
-    Stores a price in the database.
+    Stores a price in the database and returns it's price entry.
     """
     sourceentry_model = store_sourceentry(source_name, mkt_pair)
     PriceEntry.create_table(fail_silently=True)
@@ -260,8 +293,6 @@ def store_price(source_name, mkt_pair, price, price_time=datetime.datetime.now()
 
     if last_price and last_price.price == price:
         print "No price change for %s in %s" % (mkt_pair, source_name)
-        # last_price.price_time = price_time
-        # last_price.save()
         return last_price
     else:
         print "Storing price for %s at %s" % (mkt_pair, source_name)
@@ -270,6 +301,30 @@ def store_price(source_name, mkt_pair, price, price_time=datetime.datetime.now()
                               price_time=price_time)
         db_price.save()
         return db_price
+
+
+def get_last_price_pairs(mkt_pair):
+    """
+    Returns the last prices across all sources for the specified mkt_pair.
+    """
+    price_list = []
+    from_asset, to_asset = _get_assets_from_pair(mkt_pair)
+    from_asset_model = None
+    to_asset_model = None
+    for cur_asset in Asset.select().where(Asset.name == from_asset):
+        from_asset_model = cur_asset
+    for cur_asset in Asset.select().where(Asset.name == to_asset):
+        to_asset_model = cur_asset
+    for cur_se in SourceEntry.select().where(SourceEntry.from_asset == from_asset_model,
+                                             SourceEntry.to_asset == to_asset_model):
+        last_price = None
+        try:
+            last_price = PriceEntry.select().where(PriceEntry.from_source == cur_se) \
+                .order_by(-PriceEntry.price_time).get()
+        except:
+            continue
+        price_list.append((last_price.price_time, last_price.price))
+    return price_list
 
 
 def get_price_total_time_range(mkt_pair):

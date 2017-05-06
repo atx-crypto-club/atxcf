@@ -101,3 +101,4 @@ if price_updater_enabled:
 if tornado_enabled:
     import tornado_api
     tornado_api.main()
+

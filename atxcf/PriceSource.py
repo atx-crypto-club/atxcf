@@ -833,11 +833,10 @@ class AllSources(PriceSource):
         db_store.start()
 
 
-
     def _has_stored_price(self, mkt_pair):
         """
         Returns whether a price for the specified market pair has been
-        recorded.
+        recorded either in the cache or in the database.
         """
         sources = AllSources.get_cached_sources(mkt_pair)
         prices = AllSources.get_cached_prices(mkt_pair)
@@ -845,7 +844,6 @@ class AllSources(PriceSource):
             sources = {}
         if not prices:
             prices = {}
-
         if mkt_pair in sources:
             for source in sources[mkt_pair]:
                 if not source in prices:
@@ -853,7 +851,7 @@ class AllSources(PriceSource):
                 if not mkt_pair in prices[source]:
                     continue
                 return True
-        return False
+        return pricedb.has_stored_price(mkt_pair)
 
 
     def _get_stored_last_price_pairs(self, mkt_pair):
@@ -878,6 +876,12 @@ class AllSources(PriceSource):
                 )
             last_price = price_seq[-1]
             price_list.append(last_price)
+
+        # check the database too
+        for last_price in pricedb.get_last_price_pairs(mkt_pair):
+            last_price[0] = (last_price[0]-datetime.datetime(1970,1,1)).total_seconds()
+            price_list.append(last_price)
+        
         return price_list
 
 
@@ -947,7 +951,7 @@ class AllSources(PriceSource):
         return mkt_srcs
 
 
-    def get_price(self, from_asset, to_asset, amount = 1.0, get_last=False):
+    def get_price(self, from_asset, to_asset, amount=1.0, get_last=False, do_store=True):
         """
         Returns price detemrined as an average across all known sources.
         If get_last is True, this will return the last price recorded if one
