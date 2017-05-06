@@ -59,12 +59,12 @@ while len(argv) > 0:
     elif arg == "noagent":
         agent_enabled = False
     elif arg == "tornado":
-	tornado_enabled = True
-	webapi_enabled = False
+        tornado_enabled = True
+        webapi_enabled = False
     elif arg == "updater":
-	price_updater_enabled = True
+        price_updater_enabled = True
     elif arg == "noupdater":
-	price_updater_enabled = False
+        price_updater_enabled = False
     else:
         break
     argv = argv[1:]
@@ -73,7 +73,7 @@ if len(argv) > 0:
     print str(cmd._run_cmd(*argv))
 else:
     cmds = cmd.get_commands() + ['webapi', 'nowebapi', 'agent', 'noagent',
-				 'tornado']
+                                 'tornado']
     print "Known commands: {}".format(sorted(cmds))
 
 def _launch_webapi():

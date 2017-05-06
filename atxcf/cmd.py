@@ -42,16 +42,16 @@ def get_symbols():
 def _do_get_price(value, trade_pair_str, get_last=False):        
     asset_strs = string.split(trade_pair_str,"/",1)
     if len(asset_strs) != 2:
-	raise CmdError("Invalid trade pair %s" % trade_pair_str)
+        raise CmdError("Invalid trade pair %s" % trade_pair_str)
     asset_strs = [cur.strip() for cur in asset_strs]
 
     with Mutex():
-	pn = _get_price_network()
-	price = pn.get_price(asset_strs[0], asset_strs[1], value, get_last)
-	if not price:
-	    price = float('NaN')
+        pn = _get_price_network()
+        price = pn.get_price(asset_strs[0], asset_strs[1], value, get_last)
+        if not price:
+            price = float('NaN')
 
-	return price
+        return price
 
 
 def get_price(*args, **kwargs):
@@ -85,7 +85,7 @@ def get_price(*args, **kwargs):
         raise CmdError("Invalid argument list for command get_price: %s" % str(args))
     get_last = True
     if "get_last" in kwargs:
-	get_last = kwargs["get_last"]
+        get_last = kwargs["get_last"]
     return _do_get_price(value, trade_pair_str, get_last)
 
 
@@ -96,23 +96,23 @@ def keep_prices_updated():
     """
     global _updater_thread
     if not _updater_thread:
-	def updater():
-	    interval = get_settings_option("price_update_interval", 60)
-	    last_prices = {}
-	    while True:
-		for mkt in get_markets():
-		    last_price = None
-		    if mkt in last_prices:
-			last_price = last_prices[mkt]
-		    price = get_price(mkt, get_last=False)
-		    if last_price != price:
-			print "updater: ", time.time(), mkt, price
-			last_prices[mkt] = price
-		time.sleep(interval)
-	print "Launching price updater thread"
-	_updater_thread = threading.Thread(target=updater)
-	_updater_thread.daemon = True
-	_updater_thread.start()
+        def updater():
+            interval = get_settings_option("price_update_interval", 60)
+            last_prices = {}
+            while True:
+                for mkt in get_markets():
+                    last_price = None
+                    if mkt in last_prices:
+                        last_price = last_prices[mkt]
+                    price = get_price(mkt, get_last=False)
+                    if last_price != price:
+                        print "updater: ", time.time(), mkt, price
+                        last_prices[mkt] = price
+                time.sleep(interval)
+        print "Launching price updater thread"
+        _updater_thread = threading.Thread(target=updater)
+        _updater_thread.daemon = True
+        _updater_thread.start()
 
 
 def get_markets():

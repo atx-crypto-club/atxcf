@@ -151,7 +151,7 @@ def get_option(option):
     settings = get_settings()
     _check_options_section(settings)
     if not option in settings["options"]:
-	raise SettingsError("No such option %s in %s" % (option, _get_settings_filename()))
+        raise SettingsError("No such option %s in %s" % (option, _get_settings_filename()))
     return settings["options"][option]
 
 

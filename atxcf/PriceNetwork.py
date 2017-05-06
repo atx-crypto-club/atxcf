@@ -75,7 +75,7 @@ class PriceNetwork(PriceSource.AllSources):
         """
         if self._is_basket(from_asset):
             return self._get_basket_value(from_asset, to_asset) * value
-	return super(PriceNetwork, self).get_price(from_asset, to_asset, value)
+        return super(PriceNetwork, self).get_price(from_asset, to_asset, value)
 
 
     def _generate_graph(self):
