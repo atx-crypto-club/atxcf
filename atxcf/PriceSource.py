@@ -214,6 +214,7 @@ class Poloniex(PriceSource):
         self._pol = None
         self._pol_ticker = None
         self._pol_ticker_ts = time.time()
+        self._symbols = None
         self._lock = threading.RLock()
 
     def _get_pol(self):
@@ -238,22 +239,27 @@ class Poloniex(PriceSource):
             timeout = self._update_interval
             if time.time() - self._pol_ticker_ts > timeout:
                 self._pol_ticker = None
+                self._symbols = None
 
 
     def get_symbols(self):
         """
         List of tradable symbols at Poloniex
         """
-        symbol_set = set()
+        if self._symbols != None:
+            return self._symbols
         key = self._class_name() + ".symbols"
         if memcached_client.has_key(key):
-            return memcached_client.get(key)
+            self._symbols = memcached_client.get(key)
+            return self._symbols
+        symbol_set = set()
         with self._lock:
             for cur in self._get_pol_ticker().iterkeys():
                 for item in cur.split("_"):
                     symbol_set.add(item)
         symbols = list(symbol_set)
         memcached_client.set(key, symbols)
+        self._symbols = symbols
         return symbols
 
 
@@ -758,14 +764,45 @@ class AllSources(PriceSource):
         return "atxcf_agent_prices_for_" + mkt_pair
 
 
+    _lock = threading.RLock()
+    _cached_sources = None
+    _cached_sources_ts = time.time()
+    _cached_prices = None
+    _cached_prices_ts = time.time()
+    _interval = get_settings_option("price_update_interval", 60)
+
+    @staticmethod
+    def update_cached_sources():
+        with AllSources._lock:
+            if time.time() - AllSources._cached_sources_ts > AllSources._interval:
+                AllSources._cached_sources = None
+
+    @staticmethod
+    def update_cached_prices():
+        with AllSources._lock:
+            if time.time() - AllSources._cached_prices_ts > AllSources._interval:
+                AllSources._cached_prices = None
+
     @staticmethod
     def get_cached_sources(mkt_pair):
-        return memcached_client.get(AllSources.get_cached_sources_cache_key(mkt_pair))
+        AllSources.update_cached_sources()
+        with AllSources._lock:
+            if not AllSources._cached_sources:
+                key = AllSources.get_cached_sources_cache_key(mkt_pair)
+                AllSources._cached_sources = memcached_client.get(key)
+                AllSources._cached_sources_ts = time.time()
+            return AllSources._cached_sources
 
 
     @staticmethod
     def get_cached_prices(mkt_pair):
-        return memcached_client.get(AllSources.get_cached_prices_cache_key(mkt_pair))
+        AllSources.update_cached_prices()
+        with AllSources._lock:
+            if not AllSources._cached_prices:
+                key = AllSources.get_cached_prices_cache_key(mkt_pair)
+                AllSources._cached_prices = memcached_client.get(key)
+                AllSources._cached_prices_ts = time.time()
+            return AllSources._cached_prices
 
 
     @staticmethod
@@ -784,15 +821,18 @@ class AllSources(PriceSource):
         """
         # memcached stuff
         sources = AllSources.get_cached_sources(mkt_pair)
+        source_set = None
         if not sources:
             sources = {}
         if not mkt_pair in sources:
             sources.update({mkt_pair:[source_name]})
+            source_set = set(sources[mkt_pair])
         else:
             source_set = set(sources[mkt_pair])
             source_set.add(source_name)
+        if set(sources[mkt_pair]) != source_set:
             sources[mkt_pair] = list(source_set)
-        AllSources.set_cached_sources(mkt_pair, sources)
+            AllSources.set_cached_sources(mkt_pair, sources)
 
         # store in the database
         if self._using_pricedb:

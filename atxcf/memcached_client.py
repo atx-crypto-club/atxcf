@@ -39,6 +39,13 @@ def servers():
     return get_settings_option("memcached_servers", default=(("localhost", 11211),))
 
 
+def readonly():
+    """
+    Returns whether we are in readonly mode.
+    """
+    return get_settings_option("memcached_readonly", True)
+
+
 _client_lock = threading.RLock()
 _client = None
 def _get_client():
@@ -54,6 +61,8 @@ def _get_client():
 #       that match a particular regex in the settings file.
 #       We might want certain keys to persist longer than others.
 def set(some_key, some_value, expire=None):
+    if readonly():
+        return
     if enabled():
         if not expire:
             expire = default_key_expiration()
