@@ -128,7 +128,12 @@ def get_top_coins(top=10):
     """
     Returns the top market cap coinz....
     """
-    return [coinmarketcap.short(name) for name in coinmarketcap.top(int(top))]
+    key = "top_coins_" + str(top)
+    if memcached_client.has_key(key):
+        return memcached_client.get(key)
+    top_coins = [coinmarketcap.short(name) for name in coinmarketcap.top(int(top))]
+    memcached_client.set(key, top_coins, expire=3600) # expire every hour
+    return top_coins
 
 
 def is_cmd(cmd):

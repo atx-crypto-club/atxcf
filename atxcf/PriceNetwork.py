@@ -5,6 +5,7 @@ prices of assets relative to each other.
 """
 import PriceSource
 import settings
+import memcached_client
 
 from functools import partial
 import networkx as nx
@@ -85,29 +86,43 @@ class PriceNetwork(PriceSource.AllSources):
         # an exchange exists between them.
         G = nx.Graph()
         G.add_nodes_from(all_symbols)
-        all_markets = self.get_markets()
         bad_markets = []
         good_markets = []
 
-        def get_mkt_price(mkt_pair_str):
-            mkt_pair = mkt_pair_str.split("/")
-            try:
-                last_price = None
-                if self._has_stored_price(mkt_pair_str):
-                    last_price = self._get_stored_price(mkt_pair_str)
-                    print "Loading market", mkt_pair[0], mkt_pair[1]
-                else:
-                    last_price = self._do_get_price(mkt_pair[0], mkt_pair[1])
-                    print "Adding market", mkt_pair[0], mkt_pair[1]
-                return (mkt_pair[0], mkt_pair[1], last_price, "")
-            except PriceSource.PriceSourceError as e:
-                return (mkt_pair[0], mkt_pair[1], None, e.message)
+        all_markets = self.get_markets()
+        all_market_prices = []
+        mc_key = self._class_name() + ".all_market_prices"
+        if memcached_client.has_key(mc_key):
+            # check if the markets in the cache differ from what we now see.
+            # if so, get all market prices again. Otherwise if we're looking at
+            # the same set of markets, lets init the graph with what is in the
+            # cache so we can skip polling every market.
+            all_market_prices, last_all_markets = memcached_client.get(mc_key)
+            #if last_all_markets != all_markets:
+            #all_market_prices = []
 
-        print "Polling known markets..."
-        # multiproccessing isn't working... some pickling error
-        #pool = multiprocessing.Pool()
-        #all_market_prices = pool.map(get_mkt_price, all_markets, 32)
-        all_market_prices = map(get_mkt_price, all_markets)
+        if len(all_market_prices) == 0:
+            def get_mkt_price(mkt_pair_str):
+                mkt_pair = mkt_pair_str.split("/")
+                try:
+                    last_price = None
+                    if self._has_stored_price(mkt_pair_str):
+                        last_price = self._get_stored_price(mkt_pair_str)
+                        print "Loading market", mkt_pair[0], mkt_pair[1]
+                    else:
+                        last_price = self._do_get_price(mkt_pair[0], mkt_pair[1])
+                        print "Adding market", mkt_pair[0], mkt_pair[1]
+                    return (mkt_pair[0], mkt_pair[1], last_price, "")
+                except PriceSource.PriceSourceError as e:
+                    return (mkt_pair[0], mkt_pair[1], None, e.message)
+
+            print "Polling known markets..."
+            # multiproccessing isn't working... some pickling error
+            #pool = multiprocessing.Pool()
+            #all_market_prices = pool.map(get_mkt_price, all_markets, 32)
+            all_market_prices = map(get_mkt_price, all_markets)
+            memcached_client.set(mc_key, (all_market_prices, all_markets))
+
         error_msgs = []
         for from_mkt, to_mkt, last_price, msg in all_market_prices:
             if last_price == None:
@@ -215,14 +230,20 @@ class PriceNetwork(PriceSource.AllSources):
             return value
 
         G = self._get_price_graph()
-        sh_p = nx.shortest_path(G, from_asset, to_asset)
+        try:
+            sh_p = nx.shortest_path(G, from_asset, to_asset)
+        except:
+            return None # TODO: log this
         if not sh_p or len(sh_p) <= 1:
             raise PriceNetworkError("No path from {0} to {1}"
                                     .format(from_asset, to_asset))
         # for each edge in the path, compute the conversion price
         cur_value = float(value)
-        for from_cur, to_cur in zip(sh_p[0:], sh_p[1:]):
-            cur_value = self._do_get_price(from_cur, to_cur, cur_value, get_last)
+        try:
+            for from_cur, to_cur in zip(sh_p[0:], sh_p[1:]):
+                cur_value = self._do_get_price(from_cur, to_cur, cur_value, get_last)
+        except:
+            return None # TODO: log this
         return cur_value
 
 
