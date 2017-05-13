@@ -83,7 +83,7 @@ def get_price(*args, **kwargs):
         trade_pair_str = "%s/%s" % (from_asset, to_asset)
     else:
         raise CmdError("Invalid argument list for command get_price: %s" % str(args))
-    get_last = True
+    get_last = get_settings_option("get_last_price", True)
     if "get_last" in kwargs:
         get_last = kwargs["get_last"]
     return _do_get_price(value, trade_pair_str, get_last)
