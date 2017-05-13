@@ -15,21 +15,33 @@ class SettingsError(RuntimeError):
     pass
 
 
+_js_settings_filename = None
 _js_settings = {}
 _js_settings_ts = time.time()
 _js_settings_lock = threading.RLock()
 _prevent_write = False
 
-def _get_settings_filename():
-    varname = "ATXCF_SETTINGS"
-    if varname in os.environ:
-        return os.environ[varname]
-    else:
-        return "atxcf.json"
+def get_settings_filename():
+    global _js_settings_lock
+    global _js_settings_filename
+
+    if not _js_settings_filename:
+        with _js_settings_lock:
+            varname = "ATXCF_SETTINGS"
+            if varname in os.environ:
+                _js_settings_filename = os.environ[varname]
+            else:
+                _js_settings_filename = "atxcf.json"
+    return _js_settings_filename
+
+
+def set_settings_filename(filename):
+    global _js_settings_filename
+    _js_settings_filename = filename
 
 
 def _get_settings_lockfile_name():
-    return _get_settings_filename() + ".lock"
+    return get_settings_filename() + ".lock"
 
     
 _js_filelock = filelock.FileLock(_get_settings_lockfile_name())
@@ -68,7 +80,7 @@ def _check_options_section(settings):
     Raises an exception if the options section is missing.
     """
     if not "options" in settings:
-        raise SettingsError("Missing options section in %s" % _get_settings_filename())
+        raise SettingsError("Missing options section in %s" % get_settings_filename())
 
 
 def get_settings():
@@ -83,7 +95,7 @@ def get_settings():
     doInit = False
     with _js_settings_lock:
         if not _js_settings:
-            fn = _get_settings_filename()
+            fn = get_settings_filename()
             # if a settings file doesn't exist, just init with defaults
             if not os.path.isfile(fn):
                 doInit = True
@@ -91,6 +103,7 @@ def get_settings():
                 with _js_filelock:
                     try:
                         _js_settings = json.load(open(fn))
+                        _js_settings_ts = _js_settings["last_updated"]
                     except IOError as e:
                         raise SettingsError("Error loading %s: %s" % (fn, e.message))
     if doInit:
@@ -105,13 +118,11 @@ def set_settings(new_settings):
     Replaces the settings dict with the input.
     """
     global _js_settings
+    global _js_settings_ts
     global _js_settings_lock
-    if not isinstance(new_settings, dict):
-        raise SettingsError("invalid settings argument")
     with _js_settings_lock:
         _js_settings.update(new_settings)
         _js_settings_ts = time.time()
-
 
 def reload_settings():
     """
@@ -134,14 +145,14 @@ def write_settings():
     settings = get_settings()
     with _js_settings_lock:
         settings["last_updated"] = _js_settings_ts
-    with _js_filelock:
-        fn = _get_settings_filename()
-        try:
-            with open(fn, 'w') as f:
-                json.dump(settings, f, sort_keys=True,
-                          indent=4, separators=(',', ': '))
-        except IOError as e:
-            raise SettingsError("Error writing %s: %s" % (fn, e.message))
+        with _js_filelock:
+            fn = get_settings_filename()
+            try:
+                with open(fn, 'w') as f:
+                    json.dump(settings, f, sort_keys=True,
+                              indent=4, separators=(',', ': '))
+            except IOError as e:
+                raise SettingsError("Error writing %s: %s" % (fn, e.message))
 
 
 def get_option(option):
@@ -151,7 +162,7 @@ def get_option(option):
     settings = get_settings()
     _check_options_section(settings)
     if not option in settings["options"]:
-        raise SettingsError("No such option %s in %s" % (option, _get_settings_filename()))
+        raise SettingsError("No such option %s in %s" % (option, get_settings_filename()))
     return settings["options"][option]
 
 
@@ -192,7 +203,7 @@ def remove_option(option):
     settings = get_settings()
     _check_options_section(settings)
     if not option in settings["options"]:
-        raise SettingsError("Missing option %s in %s" % (option, _get_settings_filename()))
+        raise SettingsError("Missing option %s in %s" % (option, get_settings_filename()))
     del settings["options"][option]
     set_settings(settings)
 
@@ -215,7 +226,7 @@ def _check_credentials_section(settings):
     Raises an exception if the credentials section is missing.
     """
     if not "credentials" in settings:
-        raise SettingsError("Missing credentials section in %s" % _get_settings_filename())
+        raise SettingsError("Missing credentials section in %s" % get_settings_filename())
 
 
 def get_creds(site):
@@ -285,7 +296,7 @@ def get_last_updated():
     """
     settings = get_settings()
     if not "last_updated" in settings:
-        raise SettingsError("Missing last_updated field in %s" % _get_settings_filename())
+        raise SettingsError("Missing last_updated field in %s" % get_settings_filename())
     return settings["last_updated"]
 
 
@@ -309,13 +320,36 @@ atexit.register(write_settings)
 
 
 def _sync_settings():
+    global _js_settings
+    global _js_settings_ts
+    global _js_settings_lock
+    
     while True:
         interval = get_option("settings_update_interval")
         time.sleep(float(interval))
 
-        print "_sync_settings: writing..."
-        write_settings()
+        settings_filename = get_settings_filename()
+        
+        # check when the settings file was last updated
+        with open(settings_filename, 'r') as f:
+            file_settings = json.load(f)
+            file_js_settings_ts = file_settings["last_updated"]
 
+            # If the update time is the same, do nothing
+            if file_js_settings_ts == _js_settings_ts:
+                continue
+            
+            # If it is newer, lets use those settings for this
+            # process. If not, lets overwrite the file with
+            # our settings.
+            if file_js_settings_ts > _js_settings_ts:
+                print "_sync_settings: using newer settings from file", settings_filename
+                with _js_settings_lock:
+                    _js_settings = file_js_settings
+                    _js_settings_ts = file_js_settings_ts
+            else:
+                print "_sync_settings: writing...", settings_filename
+                write_settings()
 
 get_settings()
 _js_sync_thread = threading.Thread(target=_sync_settings)
