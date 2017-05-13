@@ -1,5 +1,5 @@
 import peewee
-import settings
+from settings import get_settings_option
 import datetime
 import string
 
@@ -12,54 +12,49 @@ def using_mysql():
     """
     Returns True if settings says to use mysql, else returns False.
     """
-    if not settings.has_option("using_mysql"):
-        settings.set_option("using_mysql", False)
-    return settings.get_option("using_mysql")
+    return get_settings_option("using_mysql", False)
 
 
 def get_mysql_hostname():
     """
     Returns the mysql hostname from the settings file.
     """
-    if not settings.has_option("mysql_hostname"):
-        settings.set_option("mysql_hostname", "localhost")
-    return settings.get_option("mysql_hostname")
+    return get_settings_option("mysql_hostname", "localhost")
 
 
 def get_mysql_username():
     """
     Returns the mysql user to use when connecting to a server.
     """
-    if not settings.has_option("mysql_username"):
-        settings.set_option("mysql_username", "atxcf")
-    return settings.get_option("mysql_username")
+    return get_settings_option("mysql_username", "atxcf")
 
 
 def get_mysql_password():
     """
     Returns the mysql password to use when connecting to a server
     """
-    if not settings.has_option("mysql_password"):
-        settings.set_option("mysql_password", "")
-    return settings.get_option("mysql_password")
+    return get_settings_option("mysql_password", "")
 
 
 def get_mysql_db():
     """
     Returns the mysql database to use on the server.
     """
-    if not settings.has_option("mysql_db"):
-        settings.set_option("mysql_db", "atxcf")
-    return settings.get_option("mysql_db")
+    return get_settings_option("mysql_db", "atxcf")
 
 
 def sqlight_db_file():
     """
     Returns the sqlight file to use if we are using sqlight.
     """
-    if not settings.has_option("sqlight_db"):
-        settings.set_option("sqlight_db", "atxcf.db")
-    return settings.get_option("sqlight_db")
+    return get_settings_option("sqlight_db", "atxcf.db")
+
+
+def readonly():
+    """
+    Returns whether we are in readonly mode.
+    """
+    return get_settings_option("pricedb_readonly", False)
 
 
 def get_db():
@@ -132,6 +127,8 @@ def store_asset(asset_name):
     """
     Stores an asset in the database, then returns its model.
     """
+    if readonly():
+        return # TODO: log this
     Asset.create_table(fail_silently=True)
     asset_model, asset_created = Asset.get_or_create(name=asset_name)
     asset_model.save()
@@ -144,6 +141,9 @@ def set_asset_info(asset_name, asset_info):
     """
     Sets the asset info.
     """
+    if readonly():
+        return # TODO: log this
+
     # store/get the asset model
     asset_model = store_asset(asset_name)
     asset_model.info = asset_info
@@ -161,6 +161,9 @@ def set_asset_type(asset_name, asset_type):
     """
     Sets the asset type
     """
+    if readonly():
+        return # TODO: log this
+    
     if type(asset_type) is str:
         asset_type = _asset_types[asset_type]
     asset_model = store_asset(asset_name)
@@ -179,6 +182,9 @@ def store_source(source_name):
     """
     Stores a source in the database then returns its model.
     """
+    if readonly():
+        return # TODO: log this
+    
     Source.create_table(fail_silently=True)
     source_model, source_model_created = Source.get_or_create(name=source_name)
     source_model.save()
@@ -191,6 +197,9 @@ def set_source_info(source_name, source_info):
     """
     Sets the source info
     """
+    if readonly():
+        return # TODO: log this
+
     # store/get the source model
     source_model = store_source(source_name)
     source_model.info = source_info
@@ -208,6 +217,9 @@ def set_source_type(source_name, source_type):
     """
     Sets the source type.
     """
+    if readonly():
+        return # TODO: log this
+    
     if type(source_type) is str:
         source_type = _source_types[source_type]
     source_model = store_source(source_name)
@@ -259,6 +271,9 @@ def store_sourceentry(source_name, mkt_pair):
     """
     Stores a source in the database.
     """
+    if readonly():
+        return # TODO: log this
+    
     source_model = store_source(source_name)
     from_asset, to_asset = _get_assets_from_pair(mkt_pair)
     from_asset_model = store_asset(from_asset)
@@ -278,6 +293,9 @@ def store_price(source_name, mkt_pair, price, price_time=datetime.datetime.now()
     """
     Stores a price in the database and returns it's price entry.
     """
+    if readonly():
+        return # TODO: log this
+    
     sourceentry_model = store_sourceentry(source_name, mkt_pair)
     PriceEntry.create_table(fail_silently=True)
 
