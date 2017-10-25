@@ -73,3 +73,8 @@ from .cmd import (
 from .agent import main as start_agent
 from .webapi import main as start_webapi
 from .tornado_api import main as start_tornado_api
+
+from .accounts import (
+    number_of_users, get_users, has_user, add_user, get_user_email,
+    set_user_email, get_balance, transfer
+)
