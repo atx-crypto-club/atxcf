@@ -12,6 +12,16 @@ from settings import (
 # - thread safety
 # - atomic mutation
 
+def _append_csv_row(csv_filename, fields):
+    """
+    Appends row to specified csv file. 'fields' should be
+    a list.
+    """
+    with open(csv_filename, 'ab') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+
+
 _accounts = None
 def _init_accounts_dict():
     """
@@ -59,6 +69,13 @@ def has_user(name):
     return name in _accounts
 
 
+def get_default_user_changelog_filename(name):
+    """
+    Returns default changelog filename for specfied user.
+    """
+    return "changes.%s.csv" % name
+
+
 def add_user(name, email):
     """
     Adds a user to the system.
@@ -67,7 +84,9 @@ def add_user(name, email):
     if not has_user(name):
         user = {
             "email": email,
-            "balances": {}
+            "metadata": {},
+            "balances": {},
+            "changelog": get_default_user_changelog_filename(name)
         }
         _accounts[name] = user
         sync_account_settings()
@@ -82,8 +101,29 @@ def _check_user(name):
     global _accounts
     if not has_user(name):
         raise SystemError("No such user %s" % name)
+    if not "metadata" in _accounts[name]:
+        _accounts[name]["metadata"] = {}
     if not "balances" in _accounts[name]:
         _accounts[name]["balances"] = {}
+    if not "changelog" in _accounts[name]:
+        _accounts[name]["changelog"] = get_default_user_changelog_filename(name)
+
+
+# serial number for every log entry in the system. Every new log entry
+# represents some atomic change to a user account in the system.
+_log_id = 0
+
+def _log_change(name, item, cur_time=None):
+    """
+    Adds a change to the specified user's changelog
+    """
+    global _log_id
+    if not cur_time:
+        cur_time = time.time()
+    fields = [cur_time, _log_id, name, item]
+    log_filename = get_user_changelog(name)
+    _append_csv_row(log_filename, fields)
+    _log_id += 1
     
 
 def get_user_email(name):
@@ -101,6 +141,7 @@ def set_user_email(name, email):
     global _accounts
     _check_user(name)
     _accounts[name]["email"] = email
+    _log_change(name, ("email", email))
     sync_account_settings()
 
 
@@ -116,6 +157,16 @@ def _check_asset(name, asset):
             "ledger": "ledger.%s.%s.csv" % (asset, name)
         }
 
+        
+def get_assets(name):
+    """
+    Lists all assets for which the specified user has a
+    known balance.
+    """
+    global _accounts
+    _check_user(name)
+    return [i for i in _accounts[name]["balances"]]
+
 
 def get_balance(name, asset):
     """
@@ -126,16 +177,58 @@ def get_balance(name, asset):
     return float(_accounts[name]["balances"][asset]["amount"])
 
 
-def _set_balance(name, asset, amount, do_sync=True):
+def set_balance(name, asset, amount, do_sync=True, cur_time=None):
     """
     Sets the balance for an asset held by the specified user.
     """
     global _accounts
     _check_asset(name, asset)
     _accounts[name]["balances"][asset]["amount"] = float(amount)
+    if not cur_time:
+        cur_time = time.time()
+    _log_change(name, ("balances", asset, amount), cur_time)
     if do_sync:
         sync_account_settings()
 
+
+def get_metadata(name):
+    """
+    Returns the metadata field for the specified user.
+    """
+    global _accounts
+    _check_user(name)
+    return _accounts[name]["metadata"]
+
+
+def set_metadata(name, meta):
+    """
+    Sets the metadata field for the specified user.
+    """
+    global _accounts
+    _check_user(name)
+    _accounts[name]["metadata"] = meta
+    _log_change(name, ("metadata", meta))
+    sync_account_settings()
+
+
+def get_user_changelog(name):
+    """
+    Returns the filename used for the spcified user's changelog
+    """
+    _check_user(name)
+    return _accounts[name]["changelog"]
+
+
+def set_user_changelog(name, changelog):
+    """
+    Sets the user's changelog filename.
+    """
+    _check_user(name)
+    # log first to record the change in the old changelog
+    _log_change(name, ("changelog", changelog))
+    _accounts[name]["changelog"] = changelog
+    sync_account_settings()
+    
 
 def get_user_ledger_name(name, asset):
     """
@@ -153,14 +246,12 @@ def _credit(cur_time, name, account, asset, amount, do_sync=False):
     and amount.
     """
     global _accounts
-    new_amount = get_balance(name, asset) + amount
-    _set_balance(name, asset, new_amount, False)
+    new_amount = get_balance(name, asset) + float(amount)
+    set_balance(name, asset, new_amount, False, cur_time)
 
-    # append to ledger csv
+    # append to ledger csv    
     fields=[cur_time, account, 0.0, float(amount), new_amount]
-    with open(get_user_ledger_name(name, asset), 'ab') as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
+    _append_csv_row(get_user_ledger_name(name, asset), fields)
 
     if do_sync:
         sync_account_settings()
@@ -173,14 +264,12 @@ def _debit(cur_time, name, account, asset, amount, do_sync=False):
     and amount.
     """
     global _accounts
-    new_amount = get_balance(name, asset) - amount
-    _set_balance(name, asset, new_amount, False)    
+    new_amount = get_balance(name, asset) - float(amount)
+    set_balance(name, asset, new_amount, False, cur_time)    
 
     # append to ledger csv
     fields=[cur_time, account, float(amount), 0.0, new_amount]
-    with open(get_user_ledger_name(name, asset), 'ab') as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
+    _append_csv_row(get_user_ledger_name(name, asset), fields)
 
     if do_sync:
         sync_account_settings()
@@ -215,9 +304,7 @@ def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True):
     
     # append to transfers log csv
     fields=[cur_time, from_user, to_user, asset, float(amount)]
-    with open(get_transfer_logfile_name(), 'ab') as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
+    _append_csv_row(get_transfer_logfile_name(), fields)
 
     if do_sync:
         sync_account_settings()

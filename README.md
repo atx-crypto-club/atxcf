@@ -2,6 +2,7 @@ catx agent bot
 --------------
 
 Makes price info available to the [ATX Crypto Club] slack and a web API used by [catx.io]. Prices are currently based on last exchange price and not order book availability (yet).
+Also handles accounting for the club.
 
 Module deps:
 
@@ -17,6 +18,8 @@ Module deps:
   - pymemcache
   - krakenex (optional for now)
   - mysqldb (optional)
+
+Install with ye olde pip -r requirements.txt
 
 This thing is a work in progress and has known issues like being slow and crashy especially after a storm of get_price requests (like in the web API case). I usually run it with the following script:
 

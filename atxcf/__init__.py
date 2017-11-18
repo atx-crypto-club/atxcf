@@ -76,8 +76,10 @@ from .tornado_api import main as start_tornado_api
 
 from .accounts import (
     number_of_users, get_users, has_user, add_user, get_user_email,
-    set_user_email, get_balance, transfer, get_transfer_logfile_name,
-    set_transfer_logfile_name, get_user_ledger_name
+    set_user_email, get_balance, set_balance, transfer,
+    get_transfer_logfile_name, set_transfer_logfile_name,
+    get_user_ledger_name, get_assets, get_metadata, set_metadata,
+    get_user_changelog, set_user_changelog
 )
 
 from .xch import (
