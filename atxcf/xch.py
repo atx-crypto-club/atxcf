@@ -1,5 +1,8 @@
+# -*- coding: utf-8 -*-
+
 import csv
 import time
+from collections import OrderedDict
 
 import accounts
 from settings import (
@@ -24,7 +27,14 @@ def get_exchange_logfile_name():
     return get_settings_option("exchangelog", "exchange.csv")
 
 
-def exchange(swap_a, swap_b):
+def get_exchange_marketlog_name():
+    """
+    Returns the marketlog file name from the options.
+    """
+    return get_settings_option("marketlog", "market.csv")
+
+
+def exchange(swap_a, swap_b, meta={}):
     """
     Exchanges an amount of an asset specified in swap_a,
     with that of the asset specified in swap_b.
@@ -38,7 +48,7 @@ def exchange(swap_a, swap_b):
     # append to exchange log csv
     asset_pair = swap_a[1] + "/" + swap_b[1]
     rate = float(swap_b[2]) / float(swap_a[2])
-    fields=[cur_time, swap_a[0], swap_b[0], asset_pair, swap_a[2], swap_b[2], rate]
+    fields=[cur_time, swap_a[0], swap_b[0], asset_pair, swap_a[2], swap_b[2], rate, meta]
     _append_csv_row(get_exchange_logfile_name(), fields)
 
     accounts.sync_account_settings()
@@ -46,13 +56,19 @@ def exchange(swap_a, swap_b):
 
 class Order(object):
 
+    _next_id = 0
+    
     def __init__(self, user, to_asset, from_asset, amount, price):
         self._time = time.time()
         self._user = user
         self._to = to_asset
         self._from = from_asset
         self._initial_amount = float(amount)
-        self._price = price
+        self._price = float(price)
+        self._id = self._next_id
+        self._next_id += 1
+
+        # TODO: add state flag - open, cancelled
 
         # amount left to fill. When 0, the order is filled
         self._leftover_amount = self._initial_amount
@@ -66,7 +82,15 @@ class Order(object):
     @property
     def time(self):
         return self._time
-        
+
+    @property
+    def to_asset(self):
+        return self._to
+
+    @property
+    def from_asset(self):
+        return self._from
+    
     @property
     def price(self):
         return self._price
@@ -91,6 +115,10 @@ class Order(object):
     def filled(self):
         return float(self._leftover_amount) == 0.0
 
+    @property
+    def id(self):
+        return self._id
+    
     def fill(self, amount):
         if self._leftover_amount <= 0.0:
             return 0.0
@@ -103,25 +131,88 @@ class Order(object):
         return 0.0
 
 
+_user_orders = {}
+def _add_user_orders(user, market_pair, order):
+    """
+    Adds an order to the user orders dict.
+    """
+    global _user_orders
+    if not user in _user_orders:
+        _user_orders[user]={}
+    if not market_pair in _user_orders[user]:
+        _user_orders[user][market_pair]=[]
+    _user_orders[user][market_pair].append(order)
+
+
 class Market(object):
 
-    def __init__(self, to_asset, from_asset):
+    _rec_id = 0 # default start record id
+    
+    def __init__(self, market_pair):
         # to / from
 
-        self._to = to_asset
-        self._from = from_asset
+        symbol = market_pair.split("/")
+
+        self._to = symbol[0]
+        self._from = symbol[1]
 
         self._asks = None
         self._bids = None
 
+        self._user_orders = {}
 
+        self._rec_id = get_settings_option("market_rec_id_start", self._rec_id)
+
+
+    def get_bids(self):
+        bids = {}
+        bid = self._bids
+        while bid:
+            price = bid.price
+            amount = bid.amount
+            if price in bids:
+                bids[price]+=amount
+            else:
+                bids[price]=amount
+            bid = bid.next
+        return OrderedDict(sorted(bids.items(), key=lambda t: t[0], reverse=True))
+
+    
+    def get_asks(self):
+        asks = {}
+        ask = self._asks
+        while ask:
+            price = ask.price
+            amount = ask.amount
+            if price in asks:
+                asks[price]+=amount
+            else:
+                asks[price]=amount
+            ask = ask.next
+        return OrderedDict(sorted(asks.items(), key=lambda t: t[0]))
+
+    
+    def _record_new_order(self, new_order, new_order_type):
+        """
+        Records the order in the marketlog.
+        """
+        fields=[new_order.time, self._rec_id, new_order.id, new_order_type,
+                new_order.user, new_order.to_asset, new_order.from_asset,
+                new_order.amount, new_order.price]
+        _append_csv_row(get_exchange_marketlog_name(), fields)
+        self._rec_id += 1
+        # keep the settings updated
+        set_option("market_rec_id_start", self._rec_id)        
+
+        
     def limit_buy(self, user, amount, price):
         """
         Sets a limit buy order and returns it.
         """
         new_order = Order(user, self._to,
                           self._from, amount, price)
-
+        self._record_new_order(new_order, "limit_buy")
+        
         if not self._bids:
             self._bids = new_order
         else:
@@ -134,9 +225,9 @@ class Market(object):
                 if bid.price < new_order.price:
                     break
                 prev_bid = bid
-                bid = bid.next
+                next_bid = bid.next
+                bid = next_bid
                 
-
             if prev_bid:
                 prev_bid.next = new_order
                 new_order.next = bid
@@ -153,6 +244,7 @@ class Market(object):
         """
         new_order = Order(user, self._to,
                           self._from, amount, price)
+        self._record_new_order(new_order, "limit_sell")
 
         if not self._asks:
             self._asks = new_order
@@ -166,9 +258,9 @@ class Market(object):
                 if ask.price > new_order.price:
                     break
                 prev_ask = ask
-                ask = ask.next
+                next_ask = ask.next
+                ask = next_ask
                 
-
             if prev_ask:
                 prev_ask.next = new_order
                 new_order.next = ask
@@ -241,3 +333,39 @@ class Market(object):
 
         # TODO finish meeeee
         
+_markets = {}
+def _get_market(market_pair):
+    global _markets
+    if not market_pair in _markets:
+        _markets[market_pair] = Market(market_pair)
+    return _markets[market_pair]
+
+
+def limit_buy(user, market_pair, amount, price):
+    """
+    Add a limit buy order to the book and executes and fills
+    the orders until there is a spread between the bid and ask
+    or no orders on the book left.
+    """
+    _get_market(market_pair).limit_buy(user, amount, price)
+    #_markets[market].resolve()
+
+    
+def limit_sell(user, market_pair, amount, price):
+    """
+    Add a limit sell order to the book and executes and fills
+    the orders until there is a spread between the bid and ask
+    or no orders on the book left.
+    """
+    _get_market(market_pair).limit_sell(user, amount, price)
+    #_markets[market].resolve()
+
+
+def orderbook(market_pair):
+    """
+    Returns the orderbook as a dict
+    """
+    mkt = _get_market(market_pair)
+    return {"bids": mkt.get_bids(),
+            "asks": mkt.get_asks()}
+

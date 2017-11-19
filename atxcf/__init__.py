@@ -83,5 +83,6 @@ from .accounts import (
 )
 
 from .xch import (
-    get_exchange_logfile_name, exchange
+    get_exchange_logfile_name, get_exchange_marketlog_name, exchange,
+    limit_buy, limit_sell, orderbook
 )
