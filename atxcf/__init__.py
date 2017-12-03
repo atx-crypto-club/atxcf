@@ -86,3 +86,7 @@ from .xch import (
     get_exchange_logfile_name, get_exchange_marketlog_name, exchange,
     limit_buy, limit_sell, orderbook
 )
+
+from .cache import (
+    get_val, has_key, set_val
+)
