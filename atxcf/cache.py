@@ -1,3 +1,4 @@
+import time
 import memcached_client
 from settings import get_settings, set_settings, get_settings_option, set_option
 
@@ -28,6 +29,7 @@ class SettingsCache(Cache):
         self._name = name
         self._cache = self._get_settings_cache()
 
+        
     def _init_settings_cache(self):
         sett = get_settings()
         modified = False
@@ -54,12 +56,12 @@ class SettingsCache(Cache):
         
     def get_val(self, key):
         if key in self._cache:
-            return self._cache[key]
+            return self._cache[key][1]
         return None
 
     
     def set_val(self, key, value, expire=None):
-        self._cache[key] = value
+        self._cache[key] = (time.time(), value)
         self._sync_cache()
 
 

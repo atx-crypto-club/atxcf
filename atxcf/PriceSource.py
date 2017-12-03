@@ -12,6 +12,7 @@ import settings
 from settings import (get_creds, has_creds)
 import pricedb
 import memcached_client
+import cache
 from settings import get_settings_option, get_settings, set_settings
 
 import requests
@@ -125,13 +126,13 @@ class Bitfinex(PriceSource):
 
     def _bfx_symbols(self):
         if not self.bfx_symbols:
-            memcached_key = self._class_name() + ".bfx_symbols"
-            if memcached_client.has_key(memcached_key):
-                self.bfx_symbols = memcached_client.get(memcached_key)
+            cache_key = self._class_name() + ".bfx_symbols"
+            if cache.has_key(cache_key):
+                self.bfx_symbols = cache.get_val(cache_key)
             else:
                 try:
                     self.bfx_symbols = self._bfx_client().symbols()
-                    memcached_client.set(memcached_key, self.bfx_symbols)
+                    cache.set_val(cache_key, self.bfx_symbols)
                 except:
                     raise PriceSourceError("%s: Error getting symbols from bitfinex" % self._class_name())
         return self.bfx_symbols
@@ -189,6 +190,8 @@ class Bitfinex(PriceSource):
                 price = float(self._bfx_client().ticker(bfx_symbol)["last_price"])
             except requests.exceptions.ReadTimeout:
                 raise PriceSourceError("%s: Error getting last_price: requests.exceptions.ReadTimeout" % self._class_name())
+            except ValueError:
+                raise PriceSourceError("%s: throttled" % self._class_name())
 
         if inverse:
             try:
@@ -249,8 +252,8 @@ class Poloniex(PriceSource):
         if self._symbols != None:
             return self._symbols
         key = self._class_name() + ".symbols"
-        if memcached_client.has_key(key):
-            self._symbols = memcached_client.get(key)
+        if cache.has_key(key):
+            self._symbols = cache.get_val(key)
             return self._symbols
         symbol_set = set()
         with self._lock:
@@ -258,7 +261,7 @@ class Poloniex(PriceSource):
                 for item in cur.split("_"):
                     symbol_set.add(item)
         symbols = list(symbol_set)
-        memcached_client.set(key, symbols)
+        cache.set_val(key, symbols)
         self._symbols = symbols
         return symbols
 
@@ -269,14 +272,14 @@ class Poloniex(PriceSource):
         """
         symbol_set = set()
         key = self._class_name() + ".base_symbols"
-        if memcached_client.has_key(key):
-            return memcached_client.get(key)
+        if cache.has_key(key):
+            return cache.get_val(key)
         with self._lock:
             for cur in self._get_pol_ticker().iterkeys():
                 items = cur.split("_")
                 symbol_set.add(items[0]) # the first item is the base currency
         symbols = list(symbol_set)
-        memcached_client.set(key, symbols)
+        cache.set_val(key, symbols)
         return symbols
 
 
@@ -286,13 +289,13 @@ class Poloniex(PriceSource):
         """
         mkts = []
         key = self._class_name() + ".markets"
-        if memcached_client.has_key(key):
-            return memcached_client.get(key)    
+        if cache.has_key(key):
+            return cache.get_val(key)    
         with self._lock:
             for cur in self._get_pol_ticker().iterkeys():
                 pair = cur.split("_")
                 mkts.append(pair[1] + "/" + pair[0])
-        memcached_client.set(key, mkts)
+        cache.set_val(key, mkts)
         return mkts
 
 
@@ -533,12 +536,12 @@ class Bittrex(PriceSource):
         """
         symbols = None
         key = self._class_name() + ".symbols"
-        if memcached_client.has_key(key):
-            symbols = memcached_client.get(key)
+        if cache.has_key(key):
+            symbols = cache.get_val(key)
         else:
             with self._lock:
                 symbols = self._get_symbols()
-                memcached_client.set(key, symbols)
+                cache.set_val(key, symbols)
         return symbols
 
 
@@ -549,12 +552,12 @@ class Bittrex(PriceSource):
         """
         base_symbols = None
         key = self._class_name() + ".base_symbols"
-        if memcached_client.has_key(key):
-            base_symbols = memcached_client.get(key)
+        if cache.has_key(key):
+            base_symbols = cache.get_val(key)
         else:
             with self._lock:
                 base_symbols = self._get_base_symbols()
-                memcached_client.set(key, base_symbols)
+                cache.set_val(key, base_symbols)
         return base_symbols
 
 

@@ -2,6 +2,7 @@
 
 import csv
 import time
+from collections import defaultdict
 from collections import OrderedDict
 
 import accounts
@@ -131,19 +132,6 @@ class Order(object):
         return 0.0
 
 
-_user_orders = {}
-def _add_user_orders(user, market_pair, order):
-    """
-    Adds an order to the user orders dict.
-    """
-    global _user_orders
-    if not user in _user_orders:
-        _user_orders[user]={}
-    if not market_pair in _user_orders[user]:
-        _user_orders[user][market_pair]=[]
-    _user_orders[user][market_pair].append(order)
-
-
 class Market(object):
 
     _rec_id = 0 # default start record id
@@ -159,7 +147,7 @@ class Market(object):
         self._asks = None
         self._bids = None
 
-        self._user_orders = {}
+        self._user_orders = defaultdict(list)
 
         self._rec_id = get_settings_option("market_rec_id_start", self._rec_id)
 
@@ -211,7 +199,11 @@ class Market(object):
         """
         new_order = Order(user, self._to,
                           self._from, amount, price)
+
+        # TODO: check if order is valid, balance is sufficient, etc.
+
         self._record_new_order(new_order, "limit_buy")
+        self._user_orders[user].append(("buy", new_order))
         
         if not self._bids:
             self._bids = new_order
@@ -244,7 +236,11 @@ class Market(object):
         """
         new_order = Order(user, self._to,
                           self._from, amount, price)
+
+        # TODO: check if order is valid, balance is sufficient, etc.
+
         self._record_new_order(new_order, "limit_sell")
+        self._user_orders[user].append(("sell", new_order))
 
         if not self._asks:
             self._asks = new_order
