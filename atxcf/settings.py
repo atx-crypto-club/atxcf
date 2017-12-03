@@ -9,6 +9,7 @@ import json
 import filelock
 import time
 import threading
+import copy
 
 
 class SettingsError(RuntimeError):
@@ -71,7 +72,7 @@ def _check_options_section(settings):
         raise SettingsError("Missing options section in %s" % _get_settings_filename())
 
 
-def get_settings():
+def _get_settings():
     """
     Returns the current settings dict. If there isn't one, then 
     it loads it from disk.
@@ -95,12 +96,32 @@ def get_settings():
                         raise SettingsError("Error loading %s: %s" % (fn, e.message))
     if doInit:
         init_settings()
+    return _js_settings
+
+
+def get_settings():
+    """
+    Deprecated
+    """
+    return _get_settings()
+
+
+def get_setting(*args):
+    """
+    Use this to get settings in a thread safe way.
+    """
+    global _js_settings_lock
     with _js_settings_lock:
-        ret_settings = _js_settings.copy() # return a copy so we're thread safe
-    return ret_settings
+        sett = _get_settings()
+        for arg in args:
+            if not arg in sett:
+                sett[arg] = {}
+            next_sett = sett[arg]
+            sett = next_sett
+        return copy.deepcopy(sett)
+    
 
-
-def set_settings(new_settings):
+def _set_settings(new_settings):
     """
     Replaces the settings dict with the input.
     """
@@ -113,6 +134,29 @@ def set_settings(new_settings):
         _js_settings_ts = time.time()
 
 
+def set_settings(new_settings):
+    """
+    Deprecated.
+    """
+    _set_settings(new_settings)
+    
+
+def set_setting(*args):
+    """
+    Use this to set a program setting in a thread safe way.
+    """
+    global _js_settings_lock
+    with _js_settings_lock:
+        sett = _get_settings()
+        for arg in args[:-2]:
+            if not arg in sett:
+                sett[arg] = {}
+            next_sett = sett[arg]
+            sett = next_sett
+        sett[args[-2]] = args[-1]
+        _js_settings_ts = time.time()
+            
+        
 def reload_settings():
     """
     Forces a reload of the settings dict from disk.
@@ -313,7 +357,7 @@ def _sync_settings():
         interval = get_option("settings_update_interval")
         time.sleep(float(interval))
 
-        print "_sync_settings: writing..."
+        #print "_sync_settings: writing..."
         write_settings()
 
 
