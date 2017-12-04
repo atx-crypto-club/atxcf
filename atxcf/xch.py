@@ -10,15 +10,9 @@ from settings import (
     get_settings_option, get_settings, set_settings, set_option
 )
 
-
-def _append_csv_row(csv_filename, fields):
-    """
-    Appends row to specified csv file. 'fields' should be
-    a list.
-    """
-    with open(csv_filename, 'ab') as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
+from utils import (
+    append_csv_row
+)
 
         
 def get_exchange_logfile_name():
@@ -50,7 +44,7 @@ def exchange(swap_a, swap_b, meta={}):
     asset_pair = swap_a[1] + "/" + swap_b[1]
     rate = float(swap_b[2]) / float(swap_a[2])
     fields=[cur_time, swap_a[0], swap_b[0], asset_pair, swap_a[2], swap_b[2], rate, meta]
-    _append_csv_row(get_exchange_logfile_name(), fields)
+    append_csv_row(get_exchange_logfile_name(), fields)
 
     accounts.sync_account_settings()
 
@@ -187,7 +181,7 @@ class Market(object):
         fields=[new_order.time, self._rec_id, new_order.id, new_order_type,
                 new_order.user, new_order.to_asset, new_order.from_asset,
                 new_order.amount, new_order.price]
-        _append_csv_row(get_exchange_marketlog_name(), fields)
+        append_csv_row(get_exchange_marketlog_name(), fields)
         self._rec_id += 1
         # keep the settings updated
         set_option("market_rec_id_start", self._rec_id)        
