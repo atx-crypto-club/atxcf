@@ -6,7 +6,7 @@ from PriceNetwork import _get_price_network
 import PriceNetwork
 import settings
 from settings import get_settings_option
-import memcached_client
+import cache
 
 import coinmarketcap
 
@@ -39,7 +39,7 @@ def get_symbols():
         return sorted(pn.get_symbols())
 
 
-def _do_get_price(value, trade_pair_str, get_last=False):        
+def _do_get_price(value, trade_pair_str):        
     asset_strs = string.split(trade_pair_str,"/",1)
     if len(asset_strs) != 2:
         raise CmdError("Invalid trade pair %s" % trade_pair_str)
@@ -47,7 +47,7 @@ def _do_get_price(value, trade_pair_str, get_last=False):
 
     with Mutex():
         pn = _get_price_network()
-        price = pn.get_price(asset_strs[0], asset_strs[1], value, get_last)
+        price = pn.get_price(asset_strs[0], asset_strs[1], value)
         if not price:
             price = float('NaN')
 
@@ -60,10 +60,6 @@ def get_price(*args, **kwargs):
     - 1 == len(args) -> from/to pair string (aka trade_pair_str)
     - 2 == len(args) -> (value, trade_pair_str)
     - 3 == len(args) -> (value, from_asset, to_asset)
-
-    Supports a keyword arg 'get_last' that flags whether we should
-    just return the last price cached or if we should try to get an
-    updated value.
     """
     value = 1.0
     trade_pair_str = ""
@@ -83,10 +79,7 @@ def get_price(*args, **kwargs):
         trade_pair_str = "%s/%s" % (from_asset, to_asset)
     else:
         raise CmdError("Invalid argument list for command get_price: %s" % str(args))
-    get_last = True
-    if "get_last" in kwargs:
-        get_last = kwargs["get_last"]
-    return _do_get_price(value, trade_pair_str, get_last)
+    return _do_get_price(value, trade_pair_str)
 
 
 _updater_thread = None
@@ -104,7 +97,7 @@ def keep_prices_updated():
                     last_price = None
                     if mkt in last_prices:
                         last_price = last_prices[mkt]
-                    price = get_price(mkt, get_last=False)
+                    price = get_price(mkt)
                     if last_price != price:
                         print "updater: ", time.time(), mkt, price
                         last_prices[mkt] = price
@@ -129,10 +122,10 @@ def get_top_coins(top=10):
     Returns the top market cap coinz....
     """
     key = "top_coins_" + str(top)
-    if memcached_client.has_key(key):
-        return memcached_client.get(key)
+    if cache.has_key(key):
+        return cache.get_val(key)
     top_coins = [coinmarketcap.short(name) for name in coinmarketcap.top(int(top))]
-    memcached_client.set(key, top_coins, expire=3600) # expire every hour
+    cache.set_val(key, top_coins, expire=3600) # expire every hour
     return top_coins
 
 

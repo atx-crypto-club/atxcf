@@ -50,11 +50,11 @@ __license__ = 'The MIT License (MIT)'
 
 from .PriceSource import (
     PriceSource, PriceSourceError, Bitfinex, Poloniex, CryptoAssetCharts,
-    Bittrex, Conversions, AllSources, get_creds
+    Bittrex, Conversions
 )
 
 from .PriceNetwork import (
-    PriceNetwork, PriceNetworkError 
+    PriceNetwork, PriceNetworkError
 )
 from .PriceNetwork import init as init_price_network
 
