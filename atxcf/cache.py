@@ -1,6 +1,9 @@
 import time
 import memcached_client
-from settings import get_settings, set_settings, get_settings_option, set_option
+from settings import (
+    get_settings, set_settings, get_settings_option, set_option,
+    get_setting, set_setting
+)
 
 class Cache(object):
 
@@ -29,43 +32,36 @@ class SettingsCache(Cache):
         self._name = name
         self._cache = self._get_settings_cache()
 
-        
-    def _init_settings_cache(self):
-        sett = get_settings()
-        modified = False
-        if not "cache" in sett:
-            sett["cache"] = {}
-            modified = True
-        if not self._name in sett["cache"]:
-            sett["cache"][self._name] = {}
-            modified = True
-        if modified:
-            set_settings(sett)
     
-        
     def _get_settings_cache(self):
-        self._init_settings_cache()
-        return get_settings()["cache"][self._name]
+        return get_setting("cache", self._name, default={})
 
-
+    
     def _sync_cache(self):
-        sett = get_settings()
-        sett["cache"][self._name] = self._cache
-        set_settings(sett)
-        
+        set_setting("cache", self._name, self._cache)
+
+
+    def clear_cache(self):
+        set_setting("cache", self._name, {})
+
         
     def get_val(self, key):
         if key in self._cache:
-            return self._cache[key][1]
+            timeout = time.time() - self._cache[key][0]
+            expire = self._cache[key][1]
+            if expire > 0 and timeout > expire:
+                return None
+            return self._cache[key][2]
         return None
 
     
     def set_val(self, key, value, expire=None):
-        self._cache[key] = (time.time(), value)
+        if expire == None:
+            expire = 0
+        self._cache[key] = (time.time(), expire, value)
         self._sync_cache()
 
 
-    
 _caches = []
 if memcached_client.enabled():
     _caches.append(MemcachedCache())
