@@ -4,8 +4,8 @@ prices of assets relative to each other.
 - transfix@sublevels.net - 20160117
 """
 import PriceSource
+import cache
 import settings
-import memcached_client
 
 from functools import partial
 import networkx as nx
@@ -26,56 +26,14 @@ class PriceNetwork(PriceSource.AllSources):
         super(PriceNetwork, self).__init__()
         self._price_graph = None
 
-        # make sure there is a Baskets section in the settings
-        sett = settings.get_settings()
-        if not "Baskets" in sett:
-            sett.update({"Baskets":{}})
-        settings.set_settings(sett)
-
         if doInitGraph:
             self.init_graph()
-
-
-    def _get_baskets(self):
-        """
-        Returns the dict of baskets
-        """
-        sett = settings.get_settings()
-        return sett["Baskets"]
-
-
-    def _get_basket_value(self, basket_name, to_asset, get_last=False):
-        """
-        Returns the basket's value in terms of to_asset.
-        """
-        baskets = self._get_baskets()
-        if not basket_name in baskets:
-            raise PriceNetworkError("%s: no such basket %s" % (self._class_name(), basket_name))
-        basket_d = baskets[basket_name]
-        to_asset_amount = 0.0
-        for name, amount in basket_d.iteritems():
-            to_asset_amount += self.get_price(name, to_asset, amount, get_last)
-        return to_asset_amount
-
-
-    def _is_basket(self, basket_name):
-        """
-        Returns boolean whether basket_name is a basket.
-        """
-        baskets = self._get_baskets()
-        if basket_name in baskets:
-            return True
-        return False
-
+            
 
     def _do_get_price(self, from_asset, to_asset, value=1.0, get_last=False):
         """
-        Returns price of assets or baskets of assets.
-
-        TODO: deal with possible cycles (baskets containing themselves...)
+        Returns price of assets from AllSources
         """
-        if self._is_basket(from_asset):
-            return self._get_basket_value(from_asset, to_asset) * value
         return super(PriceNetwork, self).get_price(from_asset, to_asset, value)
 
 
@@ -92,12 +50,12 @@ class PriceNetwork(PriceSource.AllSources):
         all_markets = self.get_markets()
         all_market_prices = []
         mc_key = self._class_name() + ".all_market_prices"
-        if memcached_client.has_key(mc_key):
+        if cache.has_key(mc_key):
             # check if the markets in the cache differ from what we now see.
             # if so, get all market prices again. Otherwise if we're looking at
             # the same set of markets, lets init the graph with what is in the
             # cache so we can skip polling every market.
-            all_market_prices, last_all_markets = memcached_client.get(mc_key)
+            all_market_prices, last_all_markets = cache.get_val(mc_key)
             #if last_all_markets != all_markets:
             #all_market_prices = []
 
@@ -121,7 +79,7 @@ class PriceNetwork(PriceSource.AllSources):
             #pool = multiprocessing.Pool()
             #all_market_prices = pool.map(get_mkt_price, all_markets, 32)
             all_market_prices = map(get_mkt_price, all_markets)
-            memcached_client.set(mc_key, (all_market_prices, all_markets))
+            cache.set_val(mc_key, (all_market_prices, all_markets))
 
         error_msgs = []
         for from_mkt, to_mkt, last_price, msg in all_market_prices:
@@ -163,59 +121,12 @@ class PriceNetwork(PriceSource.AllSources):
             self._price_graph = self._generate_graph()
 
 
-    def get_baskets(self):
-        """
-        Returns a list of baskets.
-        """
-        return self._get_baskets().keys()
-
-
-    def get_basket(self, basket_name):
-        """
-        Returns the contents of a basket.
-        """
-        baskets = self._get_baskets()
-        if not basket_name in baskets:
-            raise PriceNetworkError("No such basket_name %s" % basket_name)
-        return baskets[basket_name]
-
-
     def get_symbols(self):
-        # collect basket symbols
-        baskets = self._get_baskets()
-        basket_symbols = []
-        for basket_name in baskets.keys():
-            basket_symbols.append(basket_name)
-        # then add them to whatever AllSources gives us
-        return basket_symbols + super(PriceNetwork, self).get_symbols()
-
-
-    def set_basket(self, basket_name, basket_d):
-        sett = settings.get_settings()
-        sett["Baskets"].update({basket_name: basket_d})
-        settings.set_settings(sett)
-        self.init_graph() # re-init with new symbol info
-
-
-    def remove_basket(self, basket_name):
-        sett = settings.get_settings()
-        del sett["Baskets"][basket_name]
-        settings.set_settings(sett)
-        self.init_graph() # re-init with new symbol info
+        return super(PriceNetwork, self).get_symbols()
 
 
     def get_markets(self):
-        basket_markets = []
-        baskets = self._get_baskets()
-        for basket_name in baskets.keys():
-            for base_cur in self.get_base_symbols():
-                try:
-                    trade_pair = "{0}/{1}".format(basket_name, base_cur)
-                    self.get_price(basket_name, base_cur, 1.0, True) # check if this throws
-                    basket_markets.append(trade_pair)
-                except PriceSource.PriceSourceError:
-                    pass
-        return basket_markets + super(PriceNetwork, self).get_markets()
+        return super(PriceNetwork, self).get_markets()
 
 
     def set_source(self, sourcename, source):
