@@ -2,7 +2,8 @@
 
 import csv
 import time
-from collections import OrderedDict
+import threading
+from collections import (OrderedDict, defaultdict)
 
 import accounts
 from settings import (
@@ -19,6 +20,15 @@ def _append_csv_row(csv_filename, fields):
         writer = csv.writer(f)
         writer.writerow(fields)
 
+_xch_state = None
+_xch_state_lock = threading.RLock()
+def _init_mkt_state():
+    """
+    Initializes the xch state from the settings file.
+    When the xch module is intialized, it will populate
+    the Market dict below.
+    """
+    pass
         
 def get_exchange_logfile_name():
     """
@@ -55,8 +65,8 @@ def exchange(swap_a, swap_b, meta={}):
 
 
 class Order(object):
-
-    _next_id = 0
+    
+    _next_id = get_settings_option("order_id_start", 0)
     
     def __init__(self, user, to_asset, from_asset, amount, price):
         self._time = time.time()
@@ -66,9 +76,14 @@ class Order(object):
         self._initial_amount = float(amount)
         self._price = float(price)
         self._id = self._next_id
+        
         self._next_id += 1
+        set_option("order_id_start", self._next_id)
 
-        # TODO: add state flag - open, cancelled
+        # When the cancelled flag is true, this order should be
+        # ignored when matching and eventually purged from the
+        # book.
+        self._cancelled = False
 
         # amount left to fill. When 0, the order is filled
         self._leftover_amount = self._initial_amount
@@ -118,6 +133,14 @@ class Order(object):
     @property
     def id(self):
         return self._id
+
+    @property
+    def cancelled(self):
+        return self._cancelled
+
+    @cancelled.setter
+    def cancelled(self, flag):
+        self._cancelled = True
     
     def fill(self, amount):
         if self._leftover_amount <= 0.0:
@@ -131,22 +154,18 @@ class Order(object):
         return 0.0
 
 
-_user_orders = {}
-def _add_user_orders(user, market_pair, order):
+_user_orders = defaultdict(lambda: defaultdict(list))
+def _add_user_order(user, market_pair, order):
     """
     Adds an order to the user orders dict.
     """
     global _user_orders
-    if not user in _user_orders:
-        _user_orders[user]={}
-    if not market_pair in _user_orders[user]:
-        _user_orders[user][market_pair]=[]
     _user_orders[user][market_pair].append(order)
 
 
 class Market(object):
 
-    _rec_id = 0 # default start record id
+    _rec_id = 0 # shared next record ID for all Market instances
     
     def __init__(self, market_pair):
         # to / from
@@ -159,35 +178,25 @@ class Market(object):
         self._asks = None
         self._bids = None
 
-        self._user_orders = {}
+        self._user_orders = defaultdict(list)
 
         self._rec_id = get_settings_option("market_rec_id_start", self._rec_id)
 
 
     def get_bids(self):
-        bids = {}
+        bids = defaultdict(float)
         bid = self._bids
         while bid:
-            price = bid.price
-            amount = bid.amount
-            if price in bids:
-                bids[price]+=amount
-            else:
-                bids[price]=amount
+            bids[bid.price] += bid.amount
             bid = bid.next
         return OrderedDict(sorted(bids.items(), key=lambda t: t[0], reverse=True))
 
     
     def get_asks(self):
-        asks = {}
+        asks = defaultdict(float)
         ask = self._asks
         while ask:
-            price = ask.price
-            amount = ask.amount
-            if price in asks:
-                asks[price]+=amount
-            else:
-                asks[price]=amount
+            asks[ask.price] += ask.amount
             ask = ask.next
         return OrderedDict(sorted(asks.items(), key=lambda t: t[0]))
 
@@ -201,8 +210,9 @@ class Market(object):
                 new_order.amount, new_order.price]
         _append_csv_row(get_exchange_marketlog_name(), fields)
         self._rec_id += 1
-        # keep the settings updated
-        set_option("market_rec_id_start", self._rec_id)        
+        # keep the settings updated so we can continue
+        # where we left off when the process restarts.
+        set_option("market_rec_id_start", self._rec_id)
 
         
     def limit_buy(self, user, amount, price):
@@ -211,6 +221,7 @@ class Market(object):
         """
         new_order = Order(user, self._to,
                           self._from, amount, price)
+        self._user_orders[user].append(("buy", new_order))
         self._record_new_order(new_order, "limit_buy")
         
         if not self._bids:
@@ -244,6 +255,7 @@ class Market(object):
         """
         new_order = Order(user, self._to,
                           self._from, amount, price)
+        self._user_orders[user].append(("sell", new_order))
         self._record_new_order(new_order, "limit_sell")
 
         if not self._asks:
@@ -273,7 +285,8 @@ class Market(object):
     
     def resolve(self):
         """
-        matches orders that can be matched
+        Matches orders that can be matched, otherwise does
+        nothing.
         """
         bid = self._bids
         ask = self._asks

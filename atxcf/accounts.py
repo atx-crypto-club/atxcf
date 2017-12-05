@@ -7,6 +7,7 @@ import csv
 import time
 import threading
 import copy
+from collections import defaultdict
 
 from settings import (
     get_settings_option, get_settings, set_settings, set_option
@@ -338,7 +339,7 @@ def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True):
     balance of the specified asset and adds it to the to_user
     account's balance of that asset.
     """
-    global transfer_lock
+    global _transfer_lock
     
     if not cur_time:
         cur_time = time.time()
