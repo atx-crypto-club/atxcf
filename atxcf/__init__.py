@@ -50,11 +50,11 @@ __license__ = 'The MIT License (MIT)'
 
 from .PriceSource import (
     PriceSource, PriceSourceError, Bitfinex, Poloniex, CryptoAssetCharts,
-    Bittrex, Conversions, AllSources, get_creds
+    Bittrex, Conversions
 )
 
 from .PriceNetwork import (
-    PriceNetwork, PriceNetworkError 
+    PriceNetwork, PriceNetworkError
 )
 from .PriceNetwork import init as init_price_network
 
@@ -85,4 +85,8 @@ from .accounts import (
 from .xch import (
     get_exchange_logfile_name, get_exchange_marketlog_name, exchange,
     limit_buy, limit_sell, orderbook
+)
+
+from .cache import (
+    get_val, has_key, set_val
 )

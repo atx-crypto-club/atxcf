@@ -13,15 +13,9 @@ from settings import (
     get_settings_option, get_settings, set_settings, set_option
 )
 
-def _append_csv_row(csv_filename, fields):
-    """
-    Appends row to specified csv file. 'fields' should be
-    a list.
-    """
-    with open(csv_filename, 'ab') as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
-
+from utils import (
+    append_csv_row
+)
 
 _accounts = None
 _accounts_lock = threading.RLock()
@@ -142,7 +136,7 @@ def _log_change(name, item, cur_time=None):
         cur_time = time.time()
     fields = [cur_time, _log_id, name, item]
     log_filename = get_user_changelog(name)
-    _append_csv_row(log_filename, fields)
+    append_csv_row(log_filename, fields)
     _log_id += 1
     
 
@@ -295,7 +289,7 @@ def _credit(cur_time, name, account, asset, amount, do_sync=False):
 
     # append to ledger csv    
     fields=[cur_time, account, 0.0, float(amount), new_amount]
-    _append_csv_row(get_user_ledger_name(name, asset), fields)
+    append_csv_row(get_user_ledger_name(name, asset), fields)
 
     if do_sync:
         sync_account_settings()
@@ -312,7 +306,7 @@ def _debit(cur_time, name, account, asset, amount, do_sync=False):
 
     # append to ledger csv
     fields=[cur_time, account, float(amount), 0.0, new_amount]
-    _append_csv_row(get_user_ledger_name(name, asset), fields)
+    append_csv_row(get_user_ledger_name(name, asset), fields)
 
     if do_sync:
         sync_account_settings()
@@ -351,7 +345,7 @@ def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True):
 
       # append to transfers log csv
       fields=[cur_time, from_user, to_user, asset, float(amount)]
-      _append_csv_row(get_transfer_logfile_name(), fields)
+      append_csv_row(get_transfer_logfile_name(), fields)
 
       if do_sync:
           sync_account_settings()

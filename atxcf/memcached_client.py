@@ -1,7 +1,8 @@
 import json
 import threading
+import socket
 from pymemcache.client.base import Client
-from settings import get_settings_option
+from settings import get_settings_option, set_option
 
 def json_serializer(key, value):
     if type(value) == str:
@@ -21,7 +22,7 @@ def enabled():
     """
     Returns whether we are using memcached or not.
     """
-    return get_settings_option("using_memcached", True)
+    return get_settings_option("using_memcached", False)
 
 
 def default_key_expiration():
@@ -66,8 +67,13 @@ def set(some_key, some_value, expire=None):
     if enabled():
         if not expire:
             expire = default_key_expiration()
-        with _client_lock:
-            _get_client().set(some_key, some_value, expire=expire)
+        try:
+            with _client_lock:
+                _get_client().set(some_key, some_value, expire=expire)
+        except socket.error:
+            # disable using memcached if we can't connect
+            set_option("using_memcached", False)
+            # TODO: log this event
 
 
 def get(some_key):
@@ -78,6 +84,10 @@ def get(some_key):
             return _get_client().get(some_key)
     except KeyError:
         return None
+    except socket.error:
+        # disable using memcached if we can't connect
+        set_option("using_memcached", False)
+        # TODO: log this event
 
 
 def has_key(some_key):
