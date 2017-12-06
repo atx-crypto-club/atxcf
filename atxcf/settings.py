@@ -128,7 +128,7 @@ def get_setting(*args, **kwargs):
             next_sett = sett[arg]
             sett = next_sett
         if not args[-1] in sett:
-            if not default:
+            if default == None:
                 raise SettingsError("Missing setting value and no default specified")
             sett[args[-1]] = default
             _js_settings_ts = time.time()
