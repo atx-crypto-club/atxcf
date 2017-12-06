@@ -1,3 +1,4 @@
+# TODO: docstrings plz
 import time
 import threading
 import memcached_client

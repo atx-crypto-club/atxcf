@@ -36,7 +36,7 @@ class PriceNetwork(PriceSource.PriceSource):
 
     def init_sources(self):
         self._sources = []
-        for source_name in get_setting("option", "price_sources",
+        for source_name in get_setting("options", "price_sources",
                                        default=["Bitfinex", "Bittrex",
                                                 "Poloniex", "Conversions"]):
             if hasattr(PriceSource, source_name):
@@ -110,24 +110,28 @@ class PriceNetwork(PriceSource.PriceSource):
 
 
     def _do_get_price(self, from_asset, to_asset, amount=1.0):
-        values = []
+        unit_prices = []
         with self._lock:
             for source in self._sources:
                 try:
-                    value = source.get_price(from_asset, to_asset, amount)
-                    values.append(float(value))
-                    price = 0.0
-                    try:
-                        price = value / amount
-                    except ZeroDivisionError:
-                        pass
+                    mkt_key = from_asset + "/" + to_asset
+                    if cache.has_key(mkt_key):
+                        price = cache.get_val(mkt_key)
+                    else:
+                        price = source.get_price(from_asset, to_asset, 1.0)
+                        expire = get_setting("options", "cache_price_expiration", default=60)
+                        cache.set_val(mkt_key, float(price), expire=expire)
+                    
+                    unit_prices.append(float(price))
                 except PriceSourceError:
                     pass
                     
-        if len(values) == 0:
+        if len(unit_prices) == 0:
             raise PriceSourceError("%s: Couldn't determine price of %s/%s" % (self._class_name(), from_asset, to_asset))
-        return math.fsum(values)/float(len(values)) # TODO: work on price list reduction
-    
+
+        avg_price = math.fsum(unit_prices)/float(len(unit_prices))
+        return avg_price * amount
+
     
     def get_price(self, from_asset, to_asset, amount=1.0):
         """
@@ -136,10 +140,9 @@ class PriceNetwork(PriceSource.PriceSource):
         in the cache to help with frequent requests for prices. Prices
         in the cache expire after 60 seconds by default.
         """
-        mkt_key = from_asset + "/" + to_asset
-        if cache.has_key(mkt_key):
-            return cache.get_val(mkt_key)
-        
+        if from_asset == to_asset:
+            return amount
+                
         G = self._get_price_graph()
 
         sh_p = None
@@ -155,8 +158,6 @@ class PriceNetwork(PriceSource.PriceSource):
         for from_cur, to_cur in zip(sh_p[0:], sh_p[1:]):
             cur_value = self._do_get_price(from_cur, to_cur, cur_value)
 
-        expire = get_setting("option", "cache_price_expiration", default=60)
-        cache.set_val(mkt_key, cur_value, expire=expire)
         return cur_value
 
     

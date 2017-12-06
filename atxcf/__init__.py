@@ -90,3 +90,7 @@ from .xch import (
 from .cache import (
     get_val, has_key, set_val
 )
+
+from .portfolio import (
+    get_portfolio, get_portfolio_values, get_portfolio_nav
+)
