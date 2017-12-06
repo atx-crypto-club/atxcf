@@ -1,4 +1,5 @@
 import time
+import threading
 import memcached_client
 from settings import (
     get_settings, set_settings, get_settings_option, set_option,
@@ -31,28 +32,35 @@ class SettingsCache(Cache):
     def __init__(self, name="default"):
         self._name = name
         self._cache = self._get_settings_cache()
+        self._lock = threading.RLock()
 
     
     def _get_settings_cache(self):
         return get_setting("cache", self._name, default={})
 
-    
-    def _sync_cache(self):
-        set_setting("cache", self._name, self._cache)
 
+    def _sync_cache(self):
+        with self._lock:
+            for key, value in self._cache.iteritems():
+                cur_val = get_setting("cache", self._name, key, default=value)
+                # update the cache on disk if in memory value is newer
+                if cur_val[0] < value[0]:
+                    set_setting("cache", self._name, key, value)
+                    
 
     def clear_cache(self):
         set_setting("cache", self._name, {})
 
         
     def get_val(self, key):
-        if key in self._cache:
-            timeout = time.time() - self._cache[key][0]
-            expire = self._cache[key][1]
-            if expire > 0 and timeout > expire:
-                return None
-            return self._cache[key][2]
-        return None
+        with self._lock:
+          if key in self._cache:
+              timeout = time.time() - self._cache[key][0]
+              expire = self._cache[key][1]
+              if expire > 0 and timeout > expire:
+                  return None
+              return self._cache[key][2]
+          return None
 
     
     def set_val(self, key, value, expire=None):
