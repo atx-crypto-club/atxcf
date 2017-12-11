@@ -1,9 +1,13 @@
 import time
 from portfolio import get_portfolio_nav, get_portfolio
-from accounts import set_balance, transfer, inc_balance, dec_balance
+from accounts import set_balance, transfer, inc_balance, dec_balance, has_user
 from settings import get_setting, set_setting
 from cmd import get_price
 from utils import append_csv_row
+
+
+class SharesError(RuntimeError):
+    pass
 
 
 def get_shares_logfile_name(portfolio_name):
@@ -56,14 +60,61 @@ def get_num_shareholders(portfolio_name):
     return len(get_shareholders(portfolio_name))
 
 
+def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
+    """
+    Grants the specified number of shares to the specified shareholder.
+    This dilutes the supply of shares of the specified portfolio if there
+    are already shares. Otherwise, this creates shares for a portfolio
+    with existing assets and credits them to the specified shareholder.
+    """
+    if num_shares_to_grant <= 0:
+        raise SharesError("Invalid number of shares to grant: %d" % num_shares_to_grant)
+    if not has_user(portfolio_name):
+        raise SharesError("Invalid portfolio: %s" % portfolio_name)
+    if not has_user(shareholder_name):
+        raise SharesError("Invalid shareholder: %s" % shareholder_name)
+    
+    _next_serial_no = get_setting("shares", "serial_no", default=0)
+    initial_rate_asset = get_initial_rate_asset(portfolio_name)
+    portfolio_nav = get_portfolio_nav(portfolio_name, initial_rate_asset)
+    shares_outstanding = get_num_shares_outstanding(portfolio_name)
+    cur_time = time.time()
+    value = 0.0
+    if shares_outstanding == 0:
+        value = portfolio_nav
+    else:
+        redemption_ratio = num_shares_to_grant / shares_outstanding
+        value = portfolio_nav * redemption_ratio
+    xch_rate = value / num_shares_to_grant
+    meta = {
+        "grant_shares": num_shares_to_grant,
+        "xch_rate": xch_rate,
+        "serial_no": _next_serial_no
+    }
+    transfer(portfolio_name, shareholder_name, portfolio_name, num_shares_to_grant, cur_time, meta)
+    set_setting("shares", portfolio_name, "outstanding", shares_outstanding + num_shares_to_grant)
+
+    fields = ["grant", _next_serial_no, shareholder_name, num_shares_to_grant, "", 0.0, xch_rate]
+    append_csv_row(get_shares_logfile_name(portfolio_name), fields)
+
+    _next_serial_no += 1
+    set_setting("shares", "serial_no", _next_serial_no)
+
+
 def create_shares(portfolio_name, shareholder_name, assets):
     """
     Creates shares for a portfolio and transfers them to the
     specified shareholder. The exchange rate is calculated
     using the portfolio NAV divided by the number of shares
-    outstanding.
+    outstanding. A portfolio should have no assets if number
+    of shares is zero.
     assets is a dict of asset, balance pairs.
     """
+    if not has_user(portfolio_name):
+        raise SharesError("Invalid portfolio: %s" % portfolio_name)
+    if not has_user(shareholder_name):
+        raise SharesError("Invalid shareholder: %s" % shareholder_name)
+    
     _next_serial_no = get_setting("shares", "serial_no", default=0)
     num_shares = get_num_shares_outstanding(portfolio_name)
     initial_rate = get_initial_rate(portfolio_name)
@@ -115,6 +166,11 @@ def redeem_shares(portfolio_name, shareholder_name, num_shares_to_redeem):
     asset names held in the portfolio. Any that aren't are
     ignored.
     """
+    if not has_user(portfolio_name):
+        raise SharesError("Invalid portfolio: %s" % portfolio_name)
+    if not has_user(shareholder_name):
+        raise SharesError("Invalid shareholder: %s" % shareholder_name)
+    
     _next_serial_no = get_setting("shares", "serial_no", default=0)
     num_shares = get_num_shares_outstanding(portfolio_name)
     if num_shares == 0:

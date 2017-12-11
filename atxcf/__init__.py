@@ -98,5 +98,6 @@ from .portfolio import (
 from .shares import (
     get_shares_logfile_name, get_initial_rate, get_initial_rate_asset,
     get_num_shares_outstanding, get_portfolio_nav_share_ratio, get_shareholders,
-    get_shareholder_names, get_num_shareholders, create_shares, redeem_shares
+    get_shareholder_names, get_num_shareholders, create_shares, redeem_shares,
+    grant_shares
 )
