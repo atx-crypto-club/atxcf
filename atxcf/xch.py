@@ -46,8 +46,8 @@ def exchange(swap_a, swap_b, meta={}):
     Both arguments are tuples of the form (user, asset, amount).
     """
     cur_time = time.time()
-    accounts.transfer(swap_a[0], swap_b[0], swap_a[1], swap_a[2], cur_time, False)
-    accounts.transfer(swap_b[0], swap_a[0], swap_b[1], swap_b[2], cur_time, False)
+    accounts.transfer(swap_a[0], swap_b[0], swap_a[1], swap_a[2], cur_time, False, meta)
+    accounts.transfer(swap_b[0], swap_a[0], swap_b[1], swap_b[2], cur_time, False, meta)
 
     # append to exchange log csv
     asset_pair = swap_a[1] + "/" + swap_b[1]

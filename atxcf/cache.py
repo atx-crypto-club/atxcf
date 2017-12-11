@@ -50,25 +50,29 @@ class SettingsCache(Cache):
                     
 
     def clear_cache(self):
-        set_setting("cache", self._name, {})
+        with self._lock:
+            self._cache = {}
+            set_setting("cache", self._name, {})
 
         
     def get_val(self, key):
         with self._lock:
-          if key in self._cache:
-              timeout = time.time() - self._cache[key][0]
-              expire = self._cache[key][1]
-              if expire > 0 and timeout > expire:
-                  return None
-              return self._cache[key][2]
-          return None
+            if key in self._cache:
+                timeout = time.time() - self._cache[key][0]
+                expire = self._cache[key][1]
+                if expire > 0 and timeout > expire:
+                    return None
+                return self._cache[key][2]
+            return None
 
     
     def set_val(self, key, value, expire=None):
-        if expire == None:
-            expire = 0
-        self._cache[key] = (time.time(), expire, value)
-        self._sync_cache()
+        with self._lock:
+            if expire == None:
+                expire = 0
+            cache_val = (time.time(), expire, value)
+            self._cache[key] = cache_val
+            set_setting("cache", self._name, key, cache_val)
 
 
 _caches = []

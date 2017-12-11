@@ -127,7 +127,7 @@ def _check_user(name):
 # represents some atomic change to a user account in the system.
 _log_id = 0
 
-def _log_change(name, item, cur_time=None):
+def _log_change(name, item, cur_time=None, meta={}):
     """
     Adds a change to the specified user's changelog
     """
@@ -202,7 +202,7 @@ def get_balance(name, asset):
         return float(_accounts[name]["balances"][asset]["amount"])
 
 
-def set_balance(name, asset, amount, do_sync=True, cur_time=None):
+def set_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
     """
     Sets the balance for an asset held by the specified user.
     """
@@ -213,11 +213,23 @@ def set_balance(name, asset, amount, do_sync=True, cur_time=None):
         _accounts[name]["balances"][asset]["amount"] = float(amount)
     if not cur_time:
         cur_time = time.time()
-    _log_change(name, ("balances", asset, amount), cur_time)
+    _log_change(name, ("balances", asset, amount), cur_time, meta)
     if do_sync:
         sync_account_settings()
 
 
+def inc_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
+    bal = get_balance(name, asset)
+    bal += amount
+    set_balance(name, asset, bal, meta)
+
+
+def dec_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
+    bal = get_balance(name, asset)
+    bal -= amount
+    set_balance(name, asset, bal, meta)
+    
+    
 def get_metadata(name):
     """
     Returns the metadata field for the specified user.
@@ -278,34 +290,34 @@ def get_user_ledger_name(name, asset):
         return _accounts[name]["balances"][asset]["ledger"]
 
 
-def _credit(cur_time, name, account, asset, amount, do_sync=False):
+def _credit(cur_time, name, account, asset, amount, do_sync=False, meta={}):
     """
     Adds a credit entry in the ledger for the named user
     against another user account for the specified asset
     and amount.
     """
     new_amount = get_balance(name, asset) + float(amount)
-    set_balance(name, asset, new_amount, False, cur_time)
+    set_balance(name, asset, new_amount, False, cur_time, meta)
 
     # append to ledger csv    
-    fields=[cur_time, account, 0.0, float(amount), new_amount]
+    fields=[cur_time, account, 0.0, float(amount), new_amount, meta]
     append_csv_row(get_user_ledger_name(name, asset), fields)
 
     if do_sync:
         sync_account_settings()
 
 
-def _debit(cur_time, name, account, asset, amount, do_sync=False):
+def _debit(cur_time, name, account, asset, amount, do_sync=False, meta={}):
     """
     Adds a debit entry in the ledger for the named user
     against another user account for the specified asset
     and amount.
     """
     new_amount = get_balance(name, asset) - float(amount)
-    set_balance(name, asset, new_amount, False, cur_time)    
-
+    set_balance(name, asset, new_amount, False, cur_time, meta)
+    
     # append to ledger csv
-    fields=[cur_time, account, float(amount), 0.0, new_amount]
+    fields=[cur_time, account, float(amount), 0.0, new_amount, meta]
     append_csv_row(get_user_ledger_name(name, asset), fields)
 
     if do_sync:
@@ -327,7 +339,7 @@ def set_transfer_logfile_name(name):
 
 # ensure only one thread is doing a transaction at any given time.
 _transfer_lock = threading.RLock()
-def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True):
+def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True, meta={}):
     """
     Subtracts the specified amount from the from_user account's
     balance of the specified asset and adds it to the to_user
@@ -340,11 +352,11 @@ def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True):
 
     with _transfer_lock:
       # double accounting
-      _credit(cur_time, to_user, from_user, asset, amount)
-      _debit(cur_time, from_user, to_user, asset, amount)
+      _credit(cur_time, to_user, from_user, asset, amount, meta)
+      _debit(cur_time, from_user, to_user, asset, amount, meta)
 
       # append to transfers log csv
-      fields=[cur_time, from_user, to_user, asset, float(amount)]
+      fields=[cur_time, from_user, to_user, asset, float(amount), meta]
       append_csv_row(get_transfer_logfile_name(), fields)
 
       if do_sync:

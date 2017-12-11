@@ -49,6 +49,11 @@ class PriceNetwork(PriceSource.PriceSource):
         return self._sources
 
 
+    def add_source(self, source):
+        with self._lock:
+            self._sources.append(source)
+    
+
     def _get_price_graph(self):
         markets = self.get_markets()
         with self._lock:
@@ -137,8 +142,7 @@ class PriceNetwork(PriceSource.PriceSource):
         """
         Returns how much of to_asset you would have after exchanging it
         for amount of from_asset based on the last price. Saves prices
-        in the cache to help with frequent requests for prices. Prices
-        in the cache expire after 60 seconds by default.
+        in the cache to help with frequent requests for prices.
         """
         if from_asset == to_asset:
             return amount
