@@ -1,6 +1,9 @@
 import time
 from portfolio import get_portfolio_nav, get_portfolio
-from accounts import set_balance, transfer, inc_balance, dec_balance, has_user
+from accounts import (
+    set_balance, transfer, inc_balance, dec_balance, has_user,
+    get_users
+)
 from settings import get_setting, set_setting
 from cmd import get_price
 from utils import append_csv_row
@@ -48,12 +51,32 @@ def get_portfolio_nav_share_ratio(portfolio_name, base_asset):
     return p_nav / get_num_shares_outstanding(portfolio_name)
 
 
-def get_shareholders(portfolio_name):
-    return get_setting("shares", portfolio_name, "shareholders", default={})
+def is_shareholder(portfolio_name, shareholder_name):
+    """
+    Returns a boolean flagging whether a specified shareholder holds
+    a balance of shares of the specified portfolio.
+    """
+    if not has_user(portfolio_name):
+        raise SharesError("Invalid portfolio: %s" % portfolio_name)
+    if not has_user(shareholder_name):
+        raise SharesError("Invalid shareholder: %s" % shareholder_name)
+    return get_balance(shareholder_name, portfolio_name) > 0
 
 
 def get_shareholder_names(portfolio_name):
-    return [name for name in get_shareholders(portfolio_name)]
+    shareholder_names = []
+    for user in get_users():
+        if is_shareholder(portfolio_name, user):
+            shareholder_names.append(user)
+    return shareholder_names
+
+
+def get_shareholders(portfolio_name):
+    shareholders = {}
+    for user in get_users():
+        if is_shareholder(portfolio_name, user):
+            shareholders[user] = get_balance(user, portfolio_name)
+    return shareholders
 
 
 def get_num_shareholders(portfolio_name):
@@ -94,7 +117,7 @@ def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
     transfer(portfolio_name, shareholder_name, portfolio_name, num_shares_to_grant, cur_time, meta)
     set_setting("shares", portfolio_name, "outstanding", shares_outstanding + num_shares_to_grant)
 
-    fields = ["grant", _next_serial_no, shareholder_name, num_shares_to_grant, "", 0.0, xch_rate]
+    fields = ["grant", cur_time, _next_serial_no, shareholder_name, num_shares_to_grant, "", 0.0, xch_rate]
     append_csv_row(get_shares_logfile_name(portfolio_name), fields)
 
     _next_serial_no += 1
@@ -152,7 +175,7 @@ def create_shares(portfolio_name, shareholder_name, assets):
         transfer(portfolio_name, shareholder_name, portfolio_name, new_shares, cur_time, meta)
         set_setting("shares", portfolio_name, "outstanding", num_shares + new_shares)
         
-        fields = ["create", _next_serial_no, shareholder_name, new_shares, asset, balance, xch_rate]
+        fields = ["create", cur_time, _next_serial_no, shareholder_name, new_shares, asset, balance, xch_rate]
         append_csv_row(get_shares_logfile_name(portfolio_name), fields)
 
         _next_serial_no += 1
@@ -196,7 +219,7 @@ def redeem_shares(portfolio_name, shareholder_name, num_shares_to_redeem):
         }
         transfer(portfolio_name, shareholder_name, asset, balance * redemption_ratio, cur_time, meta)
         
-        fields = ["redeem", _next_serial_no, shareholder_name, num_shares_to_redeem, asset, balance, xch_rate]
+        fields = ["redeem", cur_time, _next_serial_no, shareholder_name, num_shares_to_redeem, asset, balance, xch_rate]
         append_csv_row(get_shares_logfile_name(portfolio_name), fields)
         
         _next_serial_no += 1
