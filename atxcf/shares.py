@@ -80,7 +80,7 @@ def get_shareholders(portfolio_name):
 
 
 def get_num_shareholders(portfolio_name):
-    return len(get_shareholders(portfolio_name))
+    return len(get_shareholder_names(portfolio_name))
 
 
 def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
