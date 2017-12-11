@@ -52,6 +52,10 @@ class PriceNetwork(PriceSource.PriceSource):
     def add_source(self, source):
         with self._lock:
             self._sources.append(source)
+            
+            # Invalidate the price graph if the source list has
+            # changed.
+            self._price_graph = None
     
 
     def _get_price_graph(self):
@@ -199,3 +203,10 @@ def instance():
     Deprecates _get_price_network.
     """
     return _get_price_network()
+
+
+def add_source(source):
+    """
+    Adds a source to the price network.
+    """
+    instance().add_source(source)

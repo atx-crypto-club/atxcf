@@ -54,7 +54,7 @@ from .PriceSource import (
 )
 
 from .PriceNetwork import (
-    PriceNetwork, PriceNetworkError
+    PriceNetwork, PriceNetworkError, add_source
 )
 from .PriceNetwork import init as init_price_network
 
