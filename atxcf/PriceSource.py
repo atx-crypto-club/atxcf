@@ -12,6 +12,7 @@ import settings
 from settings import (get_creds, has_creds)
 import pricedb
 import memcached_client
+import cache
 from settings import get_settings_option, get_settings, set_settings
 
 import requests
@@ -125,13 +126,13 @@ class Bitfinex(PriceSource):
 
     def _bfx_symbols(self):
         if not self.bfx_symbols:
-            memcached_key = self._class_name() + ".bfx_symbols"
-            if memcached_client.has_key(memcached_key):
-                self.bfx_symbols = memcached_client.get(memcached_key)
+            cache_key = self._class_name() + ".bfx_symbols"
+            if cache.has_key(cache_key):
+                self.bfx_symbols = cache.get_val(cache_key)
             else:
                 try:
                     self.bfx_symbols = self._bfx_client().symbols()
-                    memcached_client.set(memcached_key, self.bfx_symbols)
+                    cache.set_val(cache_key, self.bfx_symbols)
                 except:
                     raise PriceSourceError("%s: Error getting symbols from bitfinex" % self._class_name())
         return self.bfx_symbols
@@ -189,6 +190,8 @@ class Bitfinex(PriceSource):
                 price = float(self._bfx_client().ticker(bfx_symbol)["last_price"])
             except requests.exceptions.ReadTimeout:
                 raise PriceSourceError("%s: Error getting last_price: requests.exceptions.ReadTimeout" % self._class_name())
+            except ValueError:
+                raise PriceSourceError("%s: throttled" % self._class_name())
 
         if inverse:
             try:
@@ -249,8 +252,8 @@ class Poloniex(PriceSource):
         if self._symbols != None:
             return self._symbols
         key = self._class_name() + ".symbols"
-        if memcached_client.has_key(key):
-            self._symbols = memcached_client.get(key)
+        if cache.has_key(key):
+            self._symbols = cache.get_val(key)
             return self._symbols
         symbol_set = set()
         with self._lock:
@@ -258,7 +261,7 @@ class Poloniex(PriceSource):
                 for item in cur.split("_"):
                     symbol_set.add(item)
         symbols = list(symbol_set)
-        memcached_client.set(key, symbols)
+        cache.set_val(key, symbols)
         self._symbols = symbols
         return symbols
 
@@ -269,14 +272,14 @@ class Poloniex(PriceSource):
         """
         symbol_set = set()
         key = self._class_name() + ".base_symbols"
-        if memcached_client.has_key(key):
-            return memcached_client.get(key)
+        if cache.has_key(key):
+            return cache.get_val(key)
         with self._lock:
             for cur in self._get_pol_ticker().iterkeys():
                 items = cur.split("_")
                 symbol_set.add(items[0]) # the first item is the base currency
         symbols = list(symbol_set)
-        memcached_client.set(key, symbols)
+        cache.set_val(key, symbols)
         return symbols
 
 
@@ -286,13 +289,13 @@ class Poloniex(PriceSource):
         """
         mkts = []
         key = self._class_name() + ".markets"
-        if memcached_client.has_key(key):
-            return memcached_client.get(key)    
+        if cache.has_key(key):
+            return cache.get_val(key)    
         with self._lock:
             for cur in self._get_pol_ticker().iterkeys():
                 pair = cur.split("_")
                 mkts.append(pair[1] + "/" + pair[0])
-        memcached_client.set(key, mkts)
+        cache.set_val(key, mkts)
         return mkts
 
 
@@ -533,12 +536,12 @@ class Bittrex(PriceSource):
         """
         symbols = None
         key = self._class_name() + ".symbols"
-        if memcached_client.has_key(key):
-            symbols = memcached_client.get(key)
+        if cache.has_key(key):
+            symbols = cache.get_val(key)
         else:
             with self._lock:
                 symbols = self._get_symbols()
-                memcached_client.set(key, symbols)
+                cache.set_val(key, symbols)
         return symbols
 
 
@@ -549,12 +552,12 @@ class Bittrex(PriceSource):
         """
         base_symbols = None
         key = self._class_name() + ".base_symbols"
-        if memcached_client.has_key(key):
-            base_symbols = memcached_client.get(key)
+        if cache.has_key(key):
+            base_symbols = cache.get_val(key)
         else:
             with self._lock:
                 base_symbols = self._get_base_symbols()
-                memcached_client.set(key, base_symbols)
+                cache.set_val(key, base_symbols)
         return base_symbols
 
 
@@ -694,372 +697,3 @@ class Conversions(PriceSource):
             except ZeroDivisionError:
                 pass
         return price * amount
-
-
-class AllSources(PriceSource):
-    """
-    Uses info from all available sources
-    """
-
-    def __init__(self):
-        super(AllSources, self).__init__()
-        self._lock = threading.RLock()
-        self._using_pricedb = get_settings_option("using_pricedb", False)
-
-        # handles to price sources
-        self._sources = {}
-
-
-    def init_sources(self, addl_sources=None):
-        """
-        (Re-)Populates the _sources dict. For now, this needs to be called
-        to refresh the view of available symbols to price against.
-        """
-        with self._lock:
-            errors = []
-            #src_classes = [Bitfinex, Bittrex, Poloniex, CryptoAssetCharts, Conversions]
-            src_classes = [Bitfinex, Poloniex, Conversions]
-
-            # if any additional sources were passed, let's add them to the dict
-            if addl_sources:
-                for addl_source in addl_sources:
-                    src_classes.append(addl_source)
-
-            def add_source(srcclassobj):
-                try:
-                    class_name = srcclassobj.__name__
-                    mkt_pairs_known = []
-                    if not srcclassobj.requires_creds() or has_creds(class_name):
-                        obj = srcclassobj()
-                        self._sources.update({class_name: obj})
-                        for mkt_pair in obj.get_markets():
-                            self._store_source(class_name, mkt_pair)
-                            mkt_pairs_known.append(mkt_pair)
-                        print "Known pairs for source " + class_name + ":", mkt_pairs_known
-                    else:
-                        print "No required credentials for " + class_name + ", skipping..."
-                except RuntimeError as e:
-                    errors.append(e.message)
-
-            for src_class in src_classes:
-                add_source(src_class)
-
-            if len(errors) > 0:
-                print "AllSources errors:", errors
-
-
-    def get_sources(self):
-        if not self._sources:
-            self.init_sources()
-        return self._sources
-
-
-    @staticmethod
-    def get_cached_sources_cache_key(mkt_pair):
-        return "atxcf_agent_known_sources_for_" + mkt_pair
-
-
-    @staticmethod
-    def get_cached_prices_cache_key(mkt_pair):
-        return "atxcf_agent_prices_for_" + mkt_pair
-
-
-    _lock = threading.RLock()
-    _cached_sources = None
-    _cached_sources_ts = time.time()
-    _cached_prices = None
-    _cached_prices_ts = time.time()
-    _interval = get_settings_option("price_update_interval", 60)
-
-    @staticmethod
-    def update_cached_sources():
-        with AllSources._lock:
-            if time.time() - AllSources._cached_sources_ts > AllSources._interval:
-                AllSources._cached_sources = None
-
-    @staticmethod
-    def update_cached_prices():
-        with AllSources._lock:
-            if time.time() - AllSources._cached_prices_ts > AllSources._interval:
-                AllSources._cached_prices = None
-
-    @staticmethod
-    def get_cached_sources(mkt_pair):
-        AllSources.update_cached_sources()
-        with AllSources._lock:
-            if not AllSources._cached_sources:
-                key = AllSources.get_cached_sources_cache_key(mkt_pair)
-                AllSources._cached_sources = memcached_client.get(key)
-                AllSources._cached_sources_ts = time.time()
-            return AllSources._cached_sources
-
-
-    @staticmethod
-    def get_cached_prices(mkt_pair):
-        AllSources.update_cached_prices()
-        with AllSources._lock:
-            if not AllSources._cached_prices:
-                key = AllSources.get_cached_prices_cache_key(mkt_pair)
-                AllSources._cached_prices = memcached_client.get(key)
-                AllSources._cached_prices_ts = time.time()
-            return AllSources._cached_prices
-
-
-    @staticmethod
-    def set_cached_sources(mkt_pair, sources):
-        memcached_client.set(AllSources.get_cached_sources_cache_key(mkt_pair), sources)
-
-
-    @staticmethod
-    def set_cached_prices(mkt_pair, prices):
-        memcached_client.set(AllSources.get_cached_prices_cache_key(mkt_pair), prices)
-
-    
-    def _store_source(self, source_name, mkt_pair):
-        """
-        Associates a source with a market pair in the AllSources cache
-        """
-        # memcached stuff
-        sources = AllSources.get_cached_sources(mkt_pair)
-        source_set = None
-        if not sources:
-            sources = {}
-        if not mkt_pair in sources:
-            sources.update({mkt_pair:[source_name]})
-            source_set = set(sources[mkt_pair])
-        else:
-            source_set = set(sources[mkt_pair])
-            source_set.add(source_name)
-        if set(sources[mkt_pair]) != source_set:
-            sources[mkt_pair] = list(source_set)
-            AllSources.set_cached_sources(mkt_pair, sources)
-
-        # store in the database
-        if self._using_pricedb:
-            def do_db_store():
-                pricedb.store_sourceentry(source_name, mkt_pair)
-            db_store = threading.Thread(target=do_db_store)
-            db_store.start()
-
-
-    def _store_price(self, source_name, mkt_pair, price):
-        """
-        Appends a price to the settings AllSources cache for a 
-        particular market pair known by a source.
-        """
-        self._store_source(source_name, mkt_pair)
-
-        # timestamp
-        now_t = time.time()
-        now_dt = datetime.datetime.fromtimestamp(now_t)
-
-        # force storing floats
-        price = float(price)
-        print "Storing price for pair", mkt_pair, price
-
-        # memcached stuff
-        prices = AllSources.get_cached_prices(mkt_pair)
-        if not prices:
-            prices = {}
-        if not source_name in prices:
-            prices.update({source_name:{}})
-        if not mkt_pair in prices[source_name]:
-            prices[source_name].update({mkt_pair:[]})
-        price_list = prices[source_name][mkt_pair]
-        # just update the time of last element if price is unch
-        if len(price_list) > 0 and price_list[-1][1] == price:
-            price_list[-1] = (now_t, price)
-        else:
-            price_list.append((now_t, price))
-        AllSources.set_cached_prices(mkt_pair, prices)
-
-        # store in the database
-        if self._using_pricedb:
-            def do_db_store():
-                pricedb.store_price(source_name, mkt_pair, price, now_dt)
-            db_store = threading.Thread(target=do_db_store)
-            db_store.start()
-
-
-    def _has_stored_price(self, mkt_pair):
-        """
-        Returns whether a price for the specified market pair has been
-        recorded either in the cache or in the database.
-        """
-        sources = AllSources.get_cached_sources(mkt_pair)
-        prices = AllSources.get_cached_prices(mkt_pair)
-        if not sources:
-            sources = {}
-        if not prices:
-            prices = {}
-        if mkt_pair in sources:
-            for source in sources[mkt_pair]:
-                if not source in prices:
-                    continue
-                if not mkt_pair in prices[source]:
-                    continue
-                return True
-        if self._using_pricedb:
-            return pricedb.has_stored_price(mkt_pair)
-        return False
-
-
-    def _get_stored_last_price_pairs(self, mkt_pair):
-        sources = AllSources.get_cached_sources(mkt_pair)
-        prices = AllSources.get_cached_prices(mkt_pair)
-        
-        if not mkt_pair in sources:
-            raise PriceSourceError(
-                "%s: no stored market %s" % (self._class_name(), mkt_pair)
-            )
-
-        price_list = []
-        for source in sources[mkt_pair]:
-            if not source in prices:
-                continue
-            if not mkt_pair in prices[source]:
-                continue
-            price_seq = prices[source][mkt_pair]
-            if len(price_seq) == 0:
-                raise PriceSourceError(
-                    "%s: missing prices for market %s in source %s" % (self._class_name(), mkt_par, source)
-                )
-            last_price = price_seq[-1]
-            price_list.append(last_price)
-
-        # check the database if the cache doesn't have anything
-        if len(price_list) == 0 and self._using_pricedb:
-            for last_price in pricedb.get_last_price_pairs(mkt_pair):
-                last_price_list = list(last_price)
-                last_price_list[0] = (last_price[0]-datetime.datetime(1970,1,1)).total_seconds()
-                price_list.append(tuple(last_price_list))
-        
-        return price_list
-
-
-    def _get_stored_price(self, mkt_pair):
-        price_list = self._get_stored_last_price_pairs(mkt_pair)
-        if len(price_list) == 0:
-            raise PriceSourceError(
-                "%s: empty stored price list" % self._class_name()
-            )
-        price_list = [item[1] for item in price_list]
-        return math.fsum(price_list)/float(len(price_list))
-
-
-    def _get_last_stored_price_time(self, mkt_pair):
-        price_list = self._get_stored_last_price_pairs(mkt_pair)
-        if len(price_list) == 0:
-            raise PriceSourceError(
-                "%s: empty stored price list" % self._class_name()
-            )
-        return max([item[0] for item in price_list])
-
-
-    def get_symbols(self):
-        """
-        Returns the set of all known symbols across all price sources.
-        """
-        symbols = set()
-        with self._lock:
-            for source_name, source in self.get_sources().iteritems():
-                for symbol in source.get_symbols():
-                    symbols.add(symbol)
-        return list(symbols)
-
-
-    def get_base_symbols(self):
-        """
-        Returns the set of all known symbols across all price sources.
-        """
-        symbols = set()
-        with self._lock:
-            for source_name, source in self.get_sources().iteritems():
-                for symbol in source.get_base_symbols():
-                    symbols.add(symbol)
-        return list(symbols)
-
-
-    def get_markets(self):
-        """
-        Returns all markets known by all of the price sources.
-        """
-        mkts = set()
-        with self._lock:
-            for source in self.get_sources().itervalues():
-                for mkt in source.get_markets():
-                    mkts.add(mkt)
-        return list(mkts)
-
-
-    def get_market_sources(self):
-        """
-        Returns all market sources with their respective markets
-        """
-        mkt_srcs = {}
-        with self._lock:
-            for source in self.get_sources().itervalues():
-                mkt_srcs.update({source._class_name(): source.get_markets()})
-        return mkt_srcs
-
-
-    def get_price(self, from_asset, to_asset, amount=1.0, get_last=False, do_store=True):
-        """
-        Returns price detemrined as an average across all known sources.
-        If get_last is True, this will return the last price recorded if one
-        exists and won't try to get a fresh price in that case.
-        """
-        mkt_pair = "{0}/{1}".format(from_asset, to_asset)
-        print "getting price for", mkt_pair
-        interval = self._update_interval
-        stored_price = None
-        if self._has_stored_price(mkt_pair):
-            print "has stored price for", mkt_pair
-            last_price_time = self._get_last_stored_price_time(mkt_pair)
-            stored_price = self._get_stored_price(mkt_pair)
-            print "last_price_time:", datetime.datetime.fromtimestamp(last_price_time)
-            if get_last or time.time() - last_price_time <= interval:
-                print "Returning stored price for", mkt_pair, stored_price, amount
-                return stored_price * amount
-
-        # If we have already retrieved a price for this pair before, only try to retrieve
-        # prices from the same sources as before. Otherwise, just try all sources and record
-        # the one that succeeds. TODO: avoid having to try all sources in the first place.
-        values = []
-
-        source_names = AllSources.get_cached_sources(mkt_pair)
-        if not source_names:
-            source_names = {}
-            
-        with self._lock:
-            # Check if this pair is in the sources cache. If so, no need to re-check
-            # what sources know about the requested mkt_pair.
-            sources = []
-            if mkt_pair in source_names:
-                for source_name in source_names[mkt_pair]:
-                    source = self.get_sources()[source_name]
-                    sources.append((source_name, source))
-            else:
-                for source_name, source in self.get_sources().iteritems():
-                    sources.append((source_name, source))
-            
-            for source_name, source in sources:
-                try:
-                    value = source.get_price(from_asset, to_asset, amount)
-                    values.append(float(value))
-                    price = 0.0
-                    try:
-                        price = value / amount
-                    except ZeroDivisionError:
-                        pass
-                    self._store_price(source_name, mkt_pair, price)
-                except PriceSourceError:
-                    pass # TODO: might want to log this error
-
-        if len(values) == 0 and stored_price:
-            print "Could not retrieve price for %s, using previously stored" % mkt_pair
-            values.append(stored_price * amount)
-                        
-        if len(values) == 0:
-            raise PriceSourceError("%s: Couldn't determine price of %s/%s" % (self._class_name(), from_asset, to_asset))
-        return math.fsum(values)/float(len(values)) # TODO: work on price list reduction
