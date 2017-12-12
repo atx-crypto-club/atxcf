@@ -4,6 +4,8 @@ from slackbot.bot import listen_to
 from subprocess import check_output, CalledProcessError, STDOUT
 import re
 import string
+import threading
+import time
 
 import PriceNetwork
 import cmd
@@ -63,6 +65,48 @@ def get_commands(message):
     cmds = cmd.get_commands()
     message.reply(" ".join(sorted(cmds)))
 
+
+
+# listen to people talking in the slack and respond with price info
+_last_queries_lock = threading.RLock()
+_last_queries = {}
+_timeout = 5 * 60.0 # don't spam the chat with the same info...
+
+@listen_to('(\w+)/(\w+)', re.IGNORECASE)
+def listen_get_pair_price(message, from_asset, to_asset):
+    global _last_queries_lock
+    global _last_queries
+    global _timeout
+    
+    all_symbols = cmd.get_symbols()
+    if from_asset in all_symbols and to_asset in all_symbols:
+        pair = from_asset+"/"+to_asset
+        last_time = 0.0
+        if pair in _last_queries:
+            last_time = _last_queries[pair]
+        cur_time = time.time()
+        if cur_time - last_time > _timeout:
+            message.reply("%s/%s: %f" % (from_asset, to_asset, cmd.get_price(pair)))
+            _last_queries[pair] = cur_time
+
+
+@listen_to('\b(\w+)\b', re.IGNORECASE)
+def listen_get_price(message, asset):
+    global _last_queries_lock
+    global _last_queries
+    global _timeout
+
+    all_symbols = cmd.get_symbols()
+    if asset in all_symbols:
+        last_time = 0.0
+        if asset in _last_queries:
+            last_time = _last_queries[pair]
+        cur_time = time.time()
+        if cur_time - last_time > _timeout:
+            message.reply("%s/BTC: %f" % (asset, cmd.get_price(asset+"/BTC")))
+            message.reply("%s/USD: %f" % (asset, cmd.get_price(asset+"/USD")))
+            _last_queries[asset+"/BTC"] = cur_time
+            _last_queries[asset+"/USD"] = cur_time
 
 #@respond_to('help$', re.IGNORECASE)
 #@respond_to('get_help (.*)', re.IGNORECASE)
