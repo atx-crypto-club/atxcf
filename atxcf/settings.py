@@ -21,6 +21,7 @@ _js_settings_ts = time.time()
 _js_settings_lock = threading.RLock()
 _prevent_write = False
 
+
 def get_settings_filename():
     global _js_settings_lock
     global _js_settings_filename
@@ -29,14 +30,16 @@ def get_settings_filename():
         with _js_settings_lock:
             varname = "ATXCF_SETTINGS"
             if varname in os.environ:
-                _js_settings_filename = os.environ[varname]
+                set_settings_filename(os.environ[varname])
             else:
-                _js_settings_filename = "atxcf.json"
+                set_settings_filename("atxcf.json")
     return _js_settings_filename
 
 
 def set_settings_filename(filename):
     global _js_settings_filename
+    if not os.path.isabs(filename):
+        filename = os.path.join(os.getcwd(), filename)
     _js_settings_filename = filename
 
 
@@ -332,8 +335,8 @@ def _sync_settings():
         
         # check when the settings file was last updated
         with open(settings_filename, 'r') as f:
-            file_settings = json.load(f)
-            file_js_settings_ts = file_settings["last_updated"]
+            file_js_settings = json.load(f)
+            file_js_settings_ts = file_js_settings["last_updated"]
 
             # If the update time is the same, do nothing
             if file_js_settings_ts == _js_settings_ts:
