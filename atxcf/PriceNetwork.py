@@ -35,14 +35,15 @@ class PriceNetwork(PriceSource.PriceSource):
 
 
     def init_sources(self):
-        self._sources = []
-        for source_name in get_setting("options", "price_sources",
-                                       default=["Bitfinex", "Bittrex",
-                                                "Poloniex", "Conversions"]):
-            if hasattr(PriceSource, source_name):
-                Source = getattr(PriceSource, source_name)
-                if not Source.requires_creds() or has_creds(Source.__name__):
-                    self._sources.append(Source())
+        with self._lock:
+            self._sources = []
+            for source_name in get_setting("options", "price_sources",
+                                           default=["Bitfinex", "Bittrex",
+                                                    "Poloniex", "Conversions"]):
+                if hasattr(PriceSource, source_name):
+                    Source = getattr(PriceSource, source_name)
+                    if not Source.requires_creds() or has_creds(Source.__name__):
+                        self._sources.append(Source())
 
                     
     def get_sources(self):

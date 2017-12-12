@@ -5,8 +5,10 @@ from accounts import (
     get_users
 )
 from settings import get_setting, set_setting
-from cmd import get_price
+import cmd
 from utils import append_csv_row
+from PriceSource import PriceSource
+from PriceNetwork import add_source
 
 
 class SharesError(RuntimeError):
@@ -35,6 +37,8 @@ def get_initial_rate_asset(portfolio_name):
                        default="BTC")
 
 
+# TODO: add callback for set_balance and set "outstanding" to absolute
+# value of portfolio_name balance of it's own shares.
 def get_num_shares_outstanding(portfolio_name):
     return get_setting("shares", portfolio_name, "outstanding", default=0)
 
@@ -81,6 +85,10 @@ def get_shareholders(portfolio_name):
 
 def get_num_shareholders(portfolio_name):
     return len(get_shareholder_names(portfolio_name))
+
+
+def has_shares(portfolio_name):
+    return get_num_shares_outstanding(portfolio_name) > 0
 
 
 def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
@@ -156,7 +164,7 @@ def create_shares(portfolio_name, shareholder_name, assets):
         if num_shares != 0:
             xch_rates[asset] = get_portfolio_nav_share_ratio(portfolio_name, asset)
         else:
-            xch_rates[asset] = get_price(initial_rate, initial_rate_asset, asset)
+            xch_rates[asset] = cmd.get_price(initial_rate, initial_rate_asset, asset)
     
     share_balance_per_asset = {}
     for asset, balance in assets.iteritems():
@@ -171,6 +179,7 @@ def create_shares(portfolio_name, shareholder_name, assets):
             "xch_rate": xch_rate,
             "serial_no": _next_serial_no
         }
+        # TODO: check for sufficient shareholder balances
         transfer(shareholder_name, portfolio_name, asset, balance, cur_time, meta)
         transfer(portfolio_name, shareholder_name, portfolio_name, new_shares, cur_time, meta)
         set_setting("shares", portfolio_name, "outstanding", num_shares + new_shares)
@@ -228,3 +237,73 @@ def redeem_shares(portfolio_name, shareholder_name, num_shares_to_redeem):
     # Destroy the shares all at once.
     transfer(shareholder_name, portfolio_name, portfolio_name, num_shares_to_redeem, cur_time, meta)
     set_setting("shares", portfolio_name, "outstanding", num_shares - num_shares_to_redeem)
+
+
+class PortfolioNAV(PriceSource):
+
+    def __init__(self, base_symbols=["BTC", "USD"]):
+        super(PortfolioNAV, self).__init__()
+        self._base_symbols = base_symbols
+
+
+    def get_shared_portfolios(self):
+        portfolios = []
+        for portfolio in get_users():
+            if has_shares(portfolio):
+                portfolios.append(portfolio)
+        return portfolios
+
+        
+    def get_symbols(self):
+        """
+        Returns a list of portfolios that have shares of themselves outstanding and
+        base asset symbols.
+        """
+        return self.get_shared_portfolios() + self._base_symbols
+
+    
+    def get_base_symbols(self):
+        """
+        Provided when instantiating self.
+        """
+        return self._base_symbols
+
+
+    def get_markets(self):
+        """
+        Returns known value conversions that this price source can compute.
+        """
+        mkts = []
+        for portfolio in self.get_shared_portfolios():
+            for base_symbol in self.get_base_symbols():
+                mkts.append(portfolio + "/" + base_symbol)
+        return mkts
+
+
+    def get_price(self, from_asset, to_asset, amount=1.0):
+        """
+        Returns the price known of one portfolio's share in terms of another portfolio's share.
+        """
+        from_value = 0.0
+        to_value = 0.0
+        base_asset = self._base_symbols[0]
+
+        if has_shares(from_asset):
+            from_value = get_portfolio_nav_share_ratio(from_asset, base_asset)
+        else:
+            from_value = cmd.get_price(1.0, from_asset, base_asset)
+
+        if has_shares(to_asset):
+            to_value = get_portfolio_nav_share_ratio(to_asset, base_asset)
+        else:
+            to_value = cmd.get_price(1.0, to_asset, base_asset)
+
+        price = 0.0
+        try:
+            price = from_value / to_value
+        except ZeroDivisionError:
+            pass
+        return price * amount
+            
+            
+add_source(PortfolioNAV())

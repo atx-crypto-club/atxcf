@@ -16,16 +16,6 @@ import threading
 import time
 
 
-_mutex = threading.Lock()
-class Mutex(object):
-    def __init__(self):
-        pass
-    def __enter__(self):
-        _mutex.acquire()
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        _mutex.release()
-
-
 class CmdError(PriceNetwork.PriceNetworkError):
     pass
 
@@ -34,9 +24,8 @@ def get_symbols():
     """
     Returns all asset symbols known by the bot.
     """
-    with Mutex():
-        pn = _get_price_network()
-        return sorted(pn.get_symbols())
+    pn = _get_price_network()
+    return sorted(pn.get_symbols())
 
 
 def _do_get_price(value, trade_pair_str):        
@@ -45,13 +34,12 @@ def _do_get_price(value, trade_pair_str):
         raise CmdError("Invalid trade pair %s" % trade_pair_str)
     asset_strs = [cur.strip() for cur in asset_strs]
 
-    with Mutex():
-        pn = _get_price_network()
-        price = pn.get_price(asset_strs[0], asset_strs[1], value)
-        if not price:
-            price = float('NaN')
+    pn = _get_price_network()
+    price = pn.get_price(asset_strs[0], asset_strs[1], value)
+    if not price:
+        price = float('NaN')
 
-        return price
+    return price
 
 
 def get_price(*args, **kwargs):
@@ -112,9 +100,8 @@ def get_markets():
     """
     Returns all markets known by the bot.
     """
-    with Mutex():
-        pn = _get_price_network()
-        return pn.get_markets()
+    pn = _get_price_network()
+    return pn.get_markets()
 
 
 def get_top_coins(top=10):
