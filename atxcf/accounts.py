@@ -202,18 +202,56 @@ def get_balance(name, asset):
         return float(_accounts[name]["balances"][asset]["amount"])
 
 
+_set_balance_callbacks_lock = threading.RLock()
+_pre_set_balance_callbacks = {}
+_post_set_balance_callbacks = {}
+def add_pre_set_balance_callback(name, call):
+    global _set_balance_callbacks_lock
+    global _pre_set_balance_callbacks
+    with _set_balance_callbacks_lock:
+        _pre_set_balance_callbacks[name] = call
+
+def del_pre_set_balance_callback(name):
+    global _set_balance_callbacks_lock
+    global _pre_set_balance_callbacks
+    with _set_balance_callbacks_lock:
+        del _pre_set_balance_callbacks[name]
+
+
+def add_post_set_balance_callback(name, call):
+    global _set_balance_callbacks_lock
+    global _post_set_balance_callbacks
+    with _set_balance_callbacks_lock:
+        _post_set_balance_callbacks[name] = call
+
+
+def del_post_set_balance_callback(name):
+    global _set_balance_callbacks_lock
+    global _post_set_balance_callbacks
+    with _set_balance_callbacks_lock:
+        del _post_set_balance_callbacks[name]
+
+        
 def set_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
     """
     Sets the balance for an asset held by the specified user.
     """
     global _accounts
     global _accounts_lock
+    global _set_balance_callbacks_lock
     _check_asset(name, asset)
+    with _set_balance_callbacks_lock:
+        for key, call in _pre_set_balance_callbacks.iteritems():
+            call(name, asset, amount, cur_time, meta)
     with _accounts_lock:
         _accounts[name]["balances"][asset]["amount"] = float(amount)
     if not cur_time:
         cur_time = time.time()
     _log_change(name, ("balances", asset, amount), cur_time, meta)
+    with _set_balance_callbacks_lock:
+        for key, call in _post_set_balance_callbacks.iteritems():
+            call(name, asset, amount, cur_time, meta)
+
     if do_sync:
         sync_account_settings()
 

@@ -2,14 +2,13 @@ import time
 from portfolio import get_portfolio_nav, get_portfolio
 from accounts import (
     set_balance, transfer, inc_balance, dec_balance, has_user,
-    get_users
+    get_users, add_post_set_balance_callback
 )
 from settings import get_setting, set_setting
 import cmd
 from utils import append_csv_row
 from PriceSource import PriceSource
 from PriceNetwork import add_source
-
 
 class SharesError(RuntimeError):
     pass
@@ -37,10 +36,15 @@ def get_initial_rate_asset(portfolio_name):
                        default="BTC")
 
 
-# TODO: add callback for set_balance and set "outstanding" to absolute
-# value of portfolio_name balance of it's own shares.
 def get_num_shares_outstanding(portfolio_name):
     return get_setting("shares", portfolio_name, "outstanding", default=0)
+
+
+# Keep the shares outstanding updated.
+def _post_set_portfolio_share_balance(name, asset, amount, cur_time=None, meta={}):
+    if name == asset:
+        set_setting("shares", name, "outstanding", abs(float(amount)))
+add_post_set_balance_callback("shares_outstanding", _post_set_portfolio_share_balance)
 
 
 def get_portfolio_nav_share_ratio(portfolio_name, base_asset):
@@ -123,7 +127,6 @@ def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
         "serial_no": _next_serial_no
     }
     transfer(portfolio_name, shareholder_name, portfolio_name, num_shares_to_grant, cur_time, meta)
-    set_setting("shares", portfolio_name, "outstanding", shares_outstanding + num_shares_to_grant)
 
     fields = ["grant", cur_time, _next_serial_no, shareholder_name, num_shares_to_grant, "", 0.0, xch_rate]
     append_csv_row(get_shares_logfile_name(portfolio_name), fields)
@@ -182,7 +185,6 @@ def create_shares(portfolio_name, shareholder_name, assets):
         # TODO: check for sufficient shareholder balances
         transfer(shareholder_name, portfolio_name, asset, balance, cur_time, meta)
         transfer(portfolio_name, shareholder_name, portfolio_name, new_shares, cur_time, meta)
-        set_setting("shares", portfolio_name, "outstanding", num_shares + new_shares)
         
         fields = ["create", cur_time, _next_serial_no, shareholder_name, new_shares, asset, balance, xch_rate]
         append_csv_row(get_shares_logfile_name(portfolio_name), fields)
@@ -236,7 +238,6 @@ def redeem_shares(portfolio_name, shareholder_name, num_shares_to_redeem):
 
     # Destroy the shares all at once.
     transfer(shareholder_name, portfolio_name, portfolio_name, num_shares_to_redeem, cur_time, meta)
-    set_setting("shares", portfolio_name, "outstanding", num_shares - num_shares_to_redeem)
 
 
 class PortfolioNAV(PriceSource):
