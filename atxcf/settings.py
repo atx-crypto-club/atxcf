@@ -403,7 +403,7 @@ def _sync_settings():
                     _js_settings = file_js_settings
                     _js_settings_ts = file_js_settings_ts
             else:
-                print "_sync_settings: writing...", settings_filename
+                #print "_sync_settings: writing...", settings_filename
                 write_settings()
 
 get_settings()

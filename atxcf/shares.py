@@ -283,7 +283,8 @@ class PortfolioNAV(PriceSource):
 
     def get_price(self, from_asset, to_asset, amount=1.0):
         """
-        Returns the price known of one portfolio's share in terms of another portfolio's share.
+        Returns the price known of one portfolio's share in terms of another asset
+        or vice versa.
         """
         from_value = 0.0
         to_value = 0.0

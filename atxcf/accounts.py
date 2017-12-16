@@ -151,7 +151,7 @@ def get_user_email(name):
         return _accounts[name]["email"]
 
 
-def set_user_email(name, email):
+def set_user_email(name, email, meta={}):
     """
     Sets a user's email.
     """
@@ -160,7 +160,7 @@ def set_user_email(name, email):
     _check_user(name)
     with _accounts_lock:
         _accounts[name]["email"] = email
-    _log_change(name, ("email", email))
+    _log_change(name, ("email", email), meta)
     sync_account_settings()
 
 

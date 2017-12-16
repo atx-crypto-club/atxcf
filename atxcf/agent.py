@@ -1,3 +1,8 @@
+import os
+from settings import get_setting
+
+os.environ["SLACKBOT_API_TOKEN"] = get_setting("agent", "api_token", default="")
+
 from slackbot.bot import Bot
 from slackbot.bot import respond_to
 from slackbot.bot import listen_to
@@ -10,11 +15,25 @@ import time
 import PriceNetwork
 import cmd
 
+from settings import get_settings_option
+from accounts import (
+    has_user, add_user, get_user_email, set_user_email
+)
+
 import coinmarketcap # for top marketcap coins and stats
 
 
 class AgentError(PriceNetwork.PriceNetworkError):
     pass
+
+
+def get_message_user(message):
+    """
+    Returns the username of the user from whom the messaged originated.
+    """
+    user_id = message._get_user_id()
+    client = message._client
+    return client.users[user_id]['name']
 
 
 @respond_to('hi', re.IGNORECASE)
@@ -47,6 +66,20 @@ def get_price(message, value, trade_pair_str):
     message.reply(r_msg)
 
 
+@respond_to('price (.*)', re.IGNORECASE)
+def get_price2(message, trade_pair_str):
+    asset_strs = string.split(trade_pair_str,"/",1)
+    if len(asset_strs) != 2:
+        raise AgentError("Invalid trade pair %s" % trade_pair_str)
+    asset_strs = [cur.strip() for cur in asset_strs]
+
+    value = 1.0
+    price = cmd.get_price(value, trade_pair_str)
+    r_msg = "{0} {1} for {2} {3}".format(value, asset_strs[0], 
+                                         price, asset_strs[1])
+    message.reply(r_msg)
+    
+    
 @respond_to('get_markets')
 def get_markets(message):
     mkts = cmd.get_markets()
@@ -66,63 +99,28 @@ def get_commands(message):
     message.reply(" ".join(sorted(cmds)))
 
 
-
-# listen to people talking in the slack and respond with price info
-_last_queries_lock = threading.RLock()
-_last_queries = {}
-_timeout = 5 * 60.0 # don't spam the chat with the same info...
-
-@listen_to('(\w+)/(\w+)', re.IGNORECASE)
-def listen_get_pair_price(message, from_asset, to_asset):
-    global _last_queries_lock
-    global _last_queries
-    global _timeout
-    
-    all_symbols = cmd.get_symbols()
-    if from_asset in all_symbols and to_asset in all_symbols:
-        pair = from_asset+"/"+to_asset
-        last_time = 0.0
-        if pair in _last_queries:
-            last_time = _last_queries[pair]
-        cur_time = time.time()
-        if cur_time - last_time > _timeout:
-            message.reply("%s/%s: %f" % (from_asset, to_asset, cmd.get_price(pair)))
-            _last_queries[pair] = cur_time
+@respond_to('get_user_email$', re.IGNORECASE)
+def _get_user_email(message):
+    username = get_message_user(message)
+    domain = get_settings_option("domain", default="localhost")
+    if not has_user(username):
+        add_user(username, "%s@%s" % (username, domain))
+    message.reply(get_user_email(username))
 
 
-@listen_to('\b(\w+)\b', re.IGNORECASE)
-def listen_get_price(message, asset):
-    global _last_queries_lock
-    global _last_queries
-    global _timeout
-
-    all_symbols = cmd.get_symbols()
-    if asset in all_symbols:
-        last_time = 0.0
-        if asset in _last_queries:
-            last_time = _last_queries[pair]
-        cur_time = time.time()
-        if cur_time - last_time > _timeout:
-            message.reply("%s/BTC: %f" % (asset, cmd.get_price(asset+"/BTC")))
-            message.reply("%s/USD: %f" % (asset, cmd.get_price(asset+"/USD")))
-            _last_queries[asset+"/BTC"] = cur_time
-            _last_queries[asset+"/USD"] = cur_time
-
-#@respond_to('help$', re.IGNORECASE)
-#@respond_to('get_help (.*)', re.IGNORECASE)
-#@respond_to('get_help$', re.IGNORECASE)
-#@respond_to('get_help (.*)', re.IGNORECASE)
-#def get_help(message, cmd_str="get_help"):
-#    return cmd.get_help(cmd_str)
-
-
-#@respond_to("run_shell (.*)")
-#def run_shell(message, cmd):
-#    print "Executing: %s" % cmd
-#    out_str = check_output(cmd, stderr=STDOUT,
-#                           shell=True)
-#    message.reply(out_str)
-
+@respond_to('set_user_email (.*)$', re.IGNORECASE)
+def _set_user_email(message, email):
+    username = get_message_user(message)
+    if not has_user(username):
+        add_user(username, "%s@%s" % (username, domain))
+    meta = {
+        "user": username,
+        "cmd": "set_user_email",
+        "args": (email, )
+    }
+    set_user_email(username, email)
+    message.reply("OK")
+        
 
 def main():
     restart = True

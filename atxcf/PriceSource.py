@@ -1,8 +1,8 @@
 """
-PriceSource module for atxcf-bot. To add price sources, simply extend the PriceSource class
-and add an instance of it to the _sources dict in AllSources (or use AllSources.init_sources).
+PriceSource module for atxcf-bot.
 - transfix@sublevels.net - 20160117
 - 20170328 - transfix - not writing to file anymore when getting prices...
+- 20171214 - transfix - add sources to the PriceNetwork
 """
 
 import bitfinex
@@ -10,8 +10,6 @@ import poloniex
 import bittrex
 import settings
 from settings import (get_creds, has_creds)
-import pricedb
-import memcached_client
 import cache
 from settings import get_settings_option, get_settings, set_settings
 
