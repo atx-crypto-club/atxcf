@@ -266,31 +266,31 @@ def dec_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
     bal = get_balance(name, asset)
     bal -= amount
     set_balance(name, asset, bal, meta)
-    
-    
-def get_metadata(name):
+
+
+def get_metadata_value(name, key):
     """
-    Returns the metadata field for the specified user.
+    Returns the user metadata value for the specified key.
     """
     global _accounts
     global _accounts_lock
     _check_user(name)
     with _accounts_lock:
-        return _accounts[name]["metadata"]
+        return _accounts[name]["metadata"][key]
 
 
-def set_metadata(name, meta):
+def set_metadata_value(name, key, value):
     """
-    Sets the metadata field for the specified user.
+    Returns the user metadata value for the specified key.
     """
     global _accounts
     global _accounts_lock
     _check_user(name)
     with _accounts_lock:
-        _accounts[name]["metadata"] = meta
-    _log_change(name, ("metadata", meta))
+        _accounts[name]["metadata"][key] = value
+    _log_change(name, ("metadata", key, value))
     sync_account_settings()
-
+    
 
 def get_user_changelog(name):
     """

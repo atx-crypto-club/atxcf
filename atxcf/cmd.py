@@ -5,7 +5,29 @@ Main set of commands known by the atxcf bot.
 from PriceNetwork import _get_price_network
 import PriceNetwork
 import settings
-from settings import get_settings_option
+from settings import get_setting, set_setting
+from settings import get_settings_option as _get_settings_option
+
+from accounts import (
+    number_of_users, get_users, has_user, add_user,
+    get_user_email, set_user_email, get_assets,
+    get_balance, set_balance, inc_balance, dec_balance,
+    get_metadata_value, set_metadata_value,
+    transfer
+)
+
+from portfolio import (
+    get_portfolio, get_portfolio_values, get_portfolio_nav
+)
+
+from shares import (
+    get_initial_rate, get_initial_rate_asset, set_initial_rate,
+    set_initial_rate_asset, get_num_shares_outstanding,
+    get_portfolio_nav_share_ratio, is_shareholder, get_shareholders,
+    get_shareholder_names, get_num_shareholders, has_shares,
+    create_shares, redeem_shares, grant_shares
+)
+
 import cache
 
 import coinmarketcap
@@ -26,6 +48,14 @@ def get_symbols():
     """
     pn = _get_price_network()
     return sorted(pn.get_symbols())
+
+
+def get_base_symbols():
+    """
+    Returns all symbols used for pricing.
+    """
+    pn = _get_price_network()
+    return sorted(pn.get_base_symbols())
 
 
 def _do_get_price(value, trade_pair_str):        
@@ -78,7 +108,7 @@ def keep_prices_updated():
     global _updater_thread
     if not _updater_thread:
         def updater():
-            interval = get_settings_option("price_update_interval", 60)
+            interval = _get_settings_option("price_update_interval", 60)
             last_prices = {}
             while True:
                 for mkt in get_markets():
@@ -102,6 +132,14 @@ def get_markets():
     """
     pn = _get_price_network()
     return pn.get_markets()
+
+
+def get_market_sources():
+    """
+    Returns the name of all market sources used for pricing
+    """
+    pn = _get_price_network()
+    return [source for source in pn.get_market_sources()]
 
 
 def get_top_coins(top=10):

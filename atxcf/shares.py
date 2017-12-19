@@ -2,7 +2,7 @@ import time
 from portfolio import get_portfolio_nav, get_portfolio
 from accounts import (
     set_balance, transfer, inc_balance, dec_balance, has_user,
-    get_users, add_post_set_balance_callback
+    get_users, get_balance, add_post_set_balance_callback
 )
 from settings import get_setting, set_setting
 import cmd
@@ -23,17 +23,48 @@ def get_shares_logfile_name(portfolio_name):
 
 
 def get_initial_rate(portfolio_name):
+    """
+    Starting exchange rate to use when a fund has zero
+    shares outstanding.
+    """
     return get_setting("shares",
                        portfolio_name,
                        "initial_rate",
                        default=0.001)
 
 
+def set_initial_rate(portfolio_name, rate):
+    """
+    Modify the initial rate to use when a fund has
+    zero shares outstanding.
+    """
+    set_setting("shares",
+                portfolio_name,
+                "initial_rate",
+                rate)
+
+
 def get_initial_rate_asset(portfolio_name):
+    """
+    The asset to use as a base value metric when
+    creating the first sharesz. Also used when granting
+    shares to calculate relative value of shares granted.
+    """
     return get_setting("shares",
                        portfolio_name,
                        "initial_rate_asset",
                        default="BTC")
+
+
+def set_initial_rate_asset(portfolio_name, asset):
+    """
+    Modifiy the initial rate asset setting for the specified
+    portfolio.
+    """
+    return set_setting("shares",
+                       portfolio_name,
+                       "initial_rate_asset",
+                       asset)
 
 
 def get_num_shares_outstanding(portfolio_name):
@@ -43,8 +74,15 @@ def get_num_shares_outstanding(portfolio_name):
 # Keep the shares outstanding updated.
 def _post_set_portfolio_share_balance(name, asset, amount, cur_time=None, meta={}):
     if name == asset:
-        set_setting("shares", name, "outstanding", abs(float(amount)))
+        set_setting("shares", asset, "outstanding", abs(float(amount)))
 add_post_set_balance_callback("shares_outstanding", _post_set_portfolio_share_balance)
+
+
+# Keep the list of shareholders updated.
+def _post_set_portfolio_shareholders(name, asset, amount, cur_time=None, meta={}):
+    if has_shares(asset):
+        set_setting("shares", asset, "shareholders", name, amount)
+add_post_set_balance_callback("shareholders", _post_set_portfolio_shareholders)
 
 
 def get_portfolio_nav_share_ratio(portfolio_name, base_asset):
@@ -126,9 +164,11 @@ def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
         "xch_rate": xch_rate,
         "serial_no": _next_serial_no
     }
-    transfer(portfolio_name, shareholder_name, portfolio_name, num_shares_to_grant, cur_time, meta)
+    transfer(portfolio_name, shareholder_name, portfolio_name,
+             num_shares_to_grant, cur_time, meta)
 
-    fields = ["grant", cur_time, _next_serial_no, shareholder_name, num_shares_to_grant, "", 0.0, xch_rate]
+    fields = ["grant", cur_time, _next_serial_no, shareholder_name,
+              num_shares_to_grant, "", 0.0, xch_rate]
     append_csv_row(get_shares_logfile_name(portfolio_name), fields)
 
     _next_serial_no += 1
@@ -165,9 +205,12 @@ def create_shares(portfolio_name, shareholder_name, assets):
         if asset == portfolio_name:
             continue
         if num_shares != 0:
-            xch_rates[asset] = get_portfolio_nav_share_ratio(portfolio_name, asset)
+            xch_rates[asset] = get_portfolio_nav_share_ratio(portfolio_name,
+                                                             asset)
         else:
-            xch_rates[asset] = cmd.get_price(initial_rate, initial_rate_asset, asset)
+            xch_rates[asset] = cmd.get_price(initial_rate,
+                                             initial_rate_asset,
+                                             asset)
     
     share_balance_per_asset = {}
     for asset, balance in assets.iteritems():
@@ -183,10 +226,13 @@ def create_shares(portfolio_name, shareholder_name, assets):
             "serial_no": _next_serial_no
         }
         # TODO: check for sufficient shareholder balances
-        transfer(shareholder_name, portfolio_name, asset, balance, cur_time, meta)
-        transfer(portfolio_name, shareholder_name, portfolio_name, new_shares, cur_time, meta)
+        transfer(shareholder_name, portfolio_name, asset, balance,
+                 cur_time, meta)
+        transfer(portfolio_name, shareholder_name, portfolio_name,
+                 new_shares, cur_time, meta)
         
-        fields = ["create", cur_time, _next_serial_no, shareholder_name, new_shares, asset, balance, xch_rate]
+        fields = ["create", cur_time, _next_serial_no, shareholder_name,
+                  new_shares, asset, balance, xch_rate]
         append_csv_row(get_shares_logfile_name(portfolio_name), fields)
 
         _next_serial_no += 1
