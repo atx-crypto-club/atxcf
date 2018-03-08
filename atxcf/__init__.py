@@ -50,7 +50,8 @@ __license__ = 'The MIT License (MIT)'
 
 from .PriceSource import (
     PriceSource, PriceSourceError, Bitfinex, Poloniex, CryptoAssetCharts,
-    Bittrex, Conversions
+    Bittrex, CoinExchange, Conversions, Coinigy, set_conversion, get_conversion,
+    get_conversions, set_conversions
 )
 
 from .PriceNetwork import (
@@ -59,28 +60,32 @@ from .PriceNetwork import (
 from .PriceNetwork import init as init_price_network
 
 from .settings import (
-    get_default_options, init_settings, get_settings, set_settings,
+    init_settings, get_settings, set_settings,
     reload_settings, write_settings, get_option, set_option,
     get_options, remove_option, get_creds, set_creds, get_all_creds,
-    remove_creds, SettingsError
+    remove_creds, SettingsError, has_setting, set_setting,
+    get_setting, remove_setting, get_settings_filename, get_last_modified
 )
 
 from .cmd import (
-    get_symbols, get_price, get_markets, get_top_coins, CmdError,
-    get_commands, get_help, keep_prices_updated, get_market_sources,
-    get_base_symbols
+    get_symbols, get_base_symbols, get_price, get_prices, get_nav,
+    get_markets, get_market_sources, get_top_coins, CmdError,
+    get_commands, get_help, keep_prices_updated, get_all_prices,
+    log_prices, compute_candles, get_candle,
+    get_candle_begin, get_candle_end,
+    get_candle_low, get_candle_high,
+    get_current_begin, get_current_end,
+    get_current_low, get_current_high,
+    get_current_percent_change
 )
-
-from .agent import main as start_agent
-from .webapi import main as start_webapi
-from .tornado_api import main as start_tornado_api
 
 from .accounts import (
     number_of_users, get_users, has_user, add_user, get_user_email,
     set_user_email, get_balance, set_balance, transfer,
     get_transfer_logfile_name, set_transfer_logfile_name,
     get_user_ledger_name, get_assets, get_user_changelog,
-    set_user_changelog, get_metadata_value, set_metadata_value
+    set_user_changelog, get_metadata_value, set_metadata_value,
+    set_domain, get_domain, get_metadata
 )
 
 from .xch import (
@@ -100,5 +105,5 @@ from .shares import (
     get_shares_logfile_name, get_initial_rate, get_initial_rate_asset,
     get_num_shares_outstanding, get_portfolio_nav_share_ratio, get_shareholders,
     get_shareholder_names, get_num_shareholders, create_shares, redeem_shares,
-    grant_shares
+    grant_shares, has_shares
 )

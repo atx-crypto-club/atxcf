@@ -10,7 +10,6 @@ import cmd
 import sys
 import logging
 
-import coinmarketcap
 
 class ProxySource(PriceNetwork.PriceNetwork):
     """

@@ -6,77 +6,95 @@ handles double entry accounting for the system.
 import csv
 import time
 import threading
-import copy
+from copy import deepcopy
 from collections import defaultdict
+from json import dumps
 
 from settings import (
-    get_settings_option, get_settings, set_settings, set_option
+    get_settings_option, get_settings, set_settings, set_option,
+    get_option, get_setting, set_setting
 )
 
 from utils import (
-    append_csv_row
+    append_record
 )
 
-_accounts = None
-_accounts_lock = threading.RLock()
-def _init_accounts_dict():
+import cmd
+
+_lock = threading.RLock()
+
+# serial number for every log entry in the system. Every new log entry
+# represents some atomic change to a user account in the system.
+_log_id = 0
+def _log_change(name, item, cur_time=None, meta={}):
     """
-    Initializes the accounts dict from the settings.
+    Adds a change to the specified user's changelog
     """
-    global _accounts
-    global _accounts_lock
-    with _accounts_lock:
-      if not _accounts:
-          sett = get_settings()
-          if "accounts" in sett:
-              _accounts = sett["accounts"]
-          else:
-              _accounts = {}
+    global _log_id
+    if not cur_time:
+        cur_time = time.time()
+    fields = [cur_time, _log_id, name, item, dumps(meta)]
+    log_filename = get_user_changelog(name)
+    append_record(log_filename, fields)
+    _log_id += 1
 
 
-def sync_account_settings():
+def get_domain():
     """
-    sets the settings section for the account dict.
+    Returns the DNS domain to use.
     """
-    global _accounts
-    global _accounts_lock
-    sett = get_settings()
-    with _accounts_lock:
-        sett["accounts"] = copy.deepcopy(_accounts)
-    set_settings(sett)
+    return get_setting("accounts", "domain", default="localhost")
 
-            
+
+def set_domain(domain, meta=None):
+    """
+    Sets the DNS domain namespace to use for this agent instance.
+    """
+    global _lock
+    with _lock:
+        set_setting("accounts", "domain", domain, meta=meta)
+    
+
+def _get_accounts():
+    """
+    Returns accounts dict from settings.
+    """
+    return get_setting("accounts", default={})
+
+
+def _get_users():
+    """
+    Returns the user dict from settings.
+    """
+    return get_setting("accounts", "users", default={})
+
+
+def _get_balances(user):
+    """
+    Returns the balances dict from settings.
+    """
+    return get_setting("accounts", "users", user, "balances", default={})
+
+
 def number_of_users():
     """
     Returns the number of users known to the system.
     """
-    global _accounts
-    global _accounts_lock
-    _init_accounts_dict()
-    with _accounts_lock:
-        return len(_accounts)
+    return len(_get_accounts())
 
 
 def get_users():
     """
     Returns the user names of all in the system
     """
-    global _accounts
-    global _accounts_lock
-    _init_accounts_dict()
-    with _accounts_lock:
-        return [name for name in _accounts]
+    return [name for name in _get_users()]
 
 
 def has_user(name):
     """
     Returns a boolean whether the user is known to the system.
     """
-    global _accounts
-    global _accounts_lock
-    _init_accounts_dict()
-    with _accounts_lock:
-        return name in _accounts
+    return name in _get_users()
 
 
 def get_default_user_changelog_filename(name):
@@ -86,97 +104,73 @@ def get_default_user_changelog_filename(name):
     return "changes.%s.csv" % name
 
 
-def add_user(name, email):
+def add_user(name, email=None, meta=None):
     """
     Adds a user to the system.
     """
-    global _accounts
-    global _accounts_lock
-    if not has_user(name):
+    global _lock
+    if has_user(name):
+        raise SystemError("User %s already exists" % name)
+    with _lock:
+        if not email:
+            email = "%s@%s" % (name, get_domain())
         user = {
             "email": email,
-            "metadata": {},
-            "balances": {},
             "changelog": get_default_user_changelog_filename(name)
         }
-        with _accounts_lock:
-            _accounts[name] = user
-        sync_account_settings()
-    else:
-        raise SystemError("User %s already exists" % name)
-
+        set_setting("accounts", "users", name, user, meta=meta)
     
-def _check_user(name):
-    """
-    Raises an exception if a user doesn't exist.
-    """
-    global _accounts
-    global _accounts_lock
-    if not has_user(name):
-        raise SystemError("No such user %s" % name)
-    with _accounts_lock:
-      if not "metadata" in _accounts[name]:
-          _accounts[name]["metadata"] = {}
-      if not "balances" in _accounts[name]:
-          _accounts[name]["balances"] = {}
-      if not "changelog" in _accounts[name]:
-          _accounts[name]["changelog"] = get_default_user_changelog_filename(name)
-
-
-# serial number for every log entry in the system. Every new log entry
-# represents some atomic change to a user account in the system.
-_log_id = 0
-
-def _log_change(name, item, cur_time=None, meta={}):
-    """
-    Adds a change to the specified user's changelog
-    """
-    global _log_id
-    if not cur_time:
-        cur_time = time.time()
-    fields = [cur_time, _log_id, name, item]
-    log_filename = get_user_changelog(name)
-    append_csv_row(log_filename, fields)
-    _log_id += 1
     
 
 def get_user_email(name):
     """
     Returns a user's email
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-        return _accounts[name]["email"]
+    return get_setting("accounts", "users", name, "email")
 
 
 def set_user_email(name, email, meta={}):
     """
     Sets a user's email.
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-        _accounts[name]["email"] = email
-    _log_change(name, ("email", email), meta)
-    sync_account_settings()
+    global _lock
+    with _lock:
+        set_setting("accounts", "users", name, "email", email, meta=meta)
+    _log_change(name, ("email", email), meta=meta)
 
 
-def _check_asset(name, asset):
+def get_user_min_value(name):
     """
-    Adds asset info to user balance if not present.
+    Returns the minimum account value before transfer starts throwing
+    InsufficientBalance exceptions.
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-      if not asset in _accounts[name]["balances"]:
-          _accounts[name]["balances"][asset] = {
-              "amount": 0.0,
-              "ledger": "ledger.%s.%s.csv" % (asset, name)
-          }
+    return get_setting("accounts", "users", name, "min_value", default=-0.001)
+
+
+def set_user_min_value(name, value, meta={}):
+    """
+    Sets the minimum account value.
+    """
+    global _lock
+    with _lock:
+        set_setting("accounts", "users", name, "min_value", value, meta=meta)
+
+
+def get_user_min_value_asset(name):
+    """
+    Returns the asset in which the minimum balance requirement is calculated
+    against.
+    """
+    return get_setting("accounts", "users", name, "min_value_asset", default="BTC")
+
+
+def set_user_min_value_asset(name, asset, meta={}):
+    """
+    Sets the minimum value asset.
+    """
+    global _lock
+    with _lock:
+        set_setting("accounts", "users", name, "min_value_asset", asset, meta=meta)
 
         
 def get_assets(name):
@@ -184,22 +178,14 @@ def get_assets(name):
     Lists all assets for which the specified user has a
     known balance.
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-        return [i for i in _accounts[name]["balances"]]
+    return [i for i in _get_balances(name)]
 
 
 def get_balance(name, asset):
     """
     Gets the balance for an asset held by the specified user.
     """
-    global _accounts
-    global _accounts_lock
-    _check_asset(name, asset)
-    with _accounts_lock:
-        return float(_accounts[name]["balances"][asset]["amount"])
+    return get_setting("accounts", "users", name, "balances", asset, "amount", default=0.0)
 
 
 _set_balance_callbacks_lock = threading.RLock()
@@ -232,134 +218,123 @@ def del_post_set_balance_callback(name):
         del _post_set_balance_callbacks[name]
 
         
-def set_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
+def set_balance(name, asset, amount, cur_time=None, meta={}):
     """
     Sets the balance for an asset held by the specified user.
     """
-    global _accounts
-    global _accounts_lock
-    global _set_balance_callbacks_lock
-    _check_asset(name, asset)
+    global _lock
     with _set_balance_callbacks_lock:
         for key, call in _pre_set_balance_callbacks.iteritems():
             call(name, asset, amount, cur_time, meta)
-    with _accounts_lock:
-        _accounts[name]["balances"][asset]["amount"] = float(amount)
+    with _lock:
+        set_setting("accounts", "users", name, "balances", asset, "amount", float(amount))
     if not cur_time:
         cur_time = time.time()
-    _log_change(name, ("balances", asset, amount), cur_time, meta)
+    _log_change(name, ("set_balance", asset, amount), cur_time, meta)
     with _set_balance_callbacks_lock:
         for key, call in _post_set_balance_callbacks.iteritems():
             call(name, asset, amount, cur_time, meta)
 
-    if do_sync:
-        sync_account_settings()
+
+def inc_balance(name, asset, amount, cur_time=None, meta={}):
+    """
+    Incrememnt balance of asset held by the named user by the spcified amount.
+    """
+    bal = 0.0
+    meta.update({"type": "inc_balance"})
+    with _lock:
+        bal = get_balance(name, asset)
+        bal += amount
+        set_balance(name, asset, bal, cur_time, meta)
+    return bal
 
 
-def inc_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
-    bal = get_balance(name, asset)
-    bal += amount
-    set_balance(name, asset, bal, meta)
+def dec_balance(name, asset, amount, cur_time=None, meta={}):
+    """
+    Decrement balance of asset held by the named user by the spcified amount.
+    """
+    bal = 0.0
+    meta.update({"type": "dec_balance"})
+    with _lock:
+        bal = get_balance(name, asset)
+        bal -= amount
+        set_balance(name, asset, bal, cur_time, meta)
+    return bal
 
 
-def dec_balance(name, asset, amount, do_sync=True, cur_time=None, meta={}):
-    bal = get_balance(name, asset)
-    bal -= amount
-    set_balance(name, asset, bal, meta)
-
+def get_metadata(name):
+    """
+    Returns the user metadata.
+    """
+    return get_setting("accounts", "users", name, "meta", default={})
+    
 
 def get_metadata_value(name, key):
     """
     Returns the user metadata value for the specified key.
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-        return _accounts[name]["metadata"][key]
+    return get_setting("accounts", "users", name, "meta", key)
 
 
-def set_metadata_value(name, key, value):
+def set_metadata_value(name, key, value, meta=None):
     """
     Returns the user metadata value for the specified key.
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-        _accounts[name]["metadata"][key] = value
-    _log_change(name, ("metadata", key, value))
-    sync_account_settings()
+    global _lock
+    with _lock:
+        set_setting("accounts", "users", name, "meta", key, value, meta=meta)
+        _log_change(name, ("metadata", key, value), meta)
     
 
 def get_user_changelog(name):
     """
     Returns the filename used for the spcified user's changelog
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    with _accounts_lock:
-        return _accounts[name]["changelog"]
+    default = get_default_user_changelog_filename(name)
+    return get_setting("accounts", "users", name, "changelog", default=default)
 
 
-def set_user_changelog(name, changelog):
+def set_user_changelog(name, changelog, meta=None):
     """
     Sets the user's changelog filename.
     """
-    global _accounts
-    global _accounts_lock
-    _check_user(name)
-    # log first to record the change in the old changelog
-    _log_change(name, ("changelog", changelog))
-    with _accounts_lock:
-        _accounts[name]["changelog"] = changelog
-    sync_account_settings()
+    global _lock
+    with _lock:
+        # log first to record the change in the old changelog
+        _log_change(name, ("changelog", changelog), meta)
+        set_setting("accounts", "users", name, "changelog", changelog, meta=meta)
     
 
 def get_user_ledger_name(name, asset):
     """
     Gets a user's csv ledger file name.
     """
-    global _accounts
-    global _accounts_lock
-    _check_asset(name, asset)
-    with _accounts_lock:
-        return _accounts[name]["balances"][asset]["ledger"]
+    default = "ledger.%s.%s.csv" % (asset, name)
+    return get_setting("accounts", "users", name, "balances", asset, "ledger", default=default)
 
 
-def _credit(cur_time, name, account, asset, amount, do_sync=False, meta={}):
+def _credit(cur_time, name, account, asset, amount, meta={}):
     """
     Adds a credit entry in the ledger for the named user
     against another user account for the specified asset
     and amount.
     """
-    new_amount = get_balance(name, asset) + float(amount)
-    set_balance(name, asset, new_amount, False, cur_time, meta)
-
+    new_amount = inc_balance(name, asset, float(amount), cur_time, meta)
     # append to ledger csv    
     fields=[cur_time, account, 0.0, float(amount), new_amount, meta]
-    append_csv_row(get_user_ledger_name(name, asset), fields)
-
-    if do_sync:
-        sync_account_settings()
+    append_record(get_user_ledger_name(name, asset), fields)
 
 
-def _debit(cur_time, name, account, asset, amount, do_sync=False, meta={}):
+def _debit(cur_time, name, account, asset, amount, meta={}):
     """
     Adds a debit entry in the ledger for the named user
     against another user account for the specified asset
     and amount.
     """
-    new_amount = get_balance(name, asset) - float(amount)
-    set_balance(name, asset, new_amount, False, cur_time, meta)
-    
+    new_amount = dec_balance(name, asset, float(amount), cur_time, meta)    
     # append to ledger csv
     fields=[cur_time, account, float(amount), 0.0, new_amount, meta]
-    append_csv_row(get_user_ledger_name(name, asset), fields)
-
-    if do_sync:
-        sync_account_settings()
+    append_record(get_user_ledger_name(name, asset), fields)
     
 
 def get_transfer_logfile_name():
@@ -375,28 +350,25 @@ def set_transfer_logfile_name(name):
     """
     set_option("accounts_transfer_log", name)
 
-# ensure only one thread is doing a transaction at any given time.
-_transfer_lock = threading.RLock()
-def transfer(from_user, to_user, asset, amount, cur_time=None, do_sync=True, meta={}):
+    
+# Only one thread can do a transaction at any given time.
+def transfer(from_user, to_user, asset, amount,
+             cur_time=None, meta={}):
     """
     Subtracts the specified amount from the from_user account's
     balance of the specified asset and adds it to the to_user
     account's balance of that asset.
     """
-    global _transfer_lock
+    global _lock
     
     if not cur_time:
         cur_time = time.time()
 
-    with _transfer_lock:
+    with _lock:
       # double accounting
       _credit(cur_time, to_user, from_user, asset, amount, meta)
       _debit(cur_time, from_user, to_user, asset, amount, meta)
 
       # append to transfers log csv
       fields=[cur_time, from_user, to_user, asset, float(amount), meta]
-      append_csv_row(get_transfer_logfile_name(), fields)
-
-      if do_sync:
-          sync_account_settings()
-    
+      append_record(get_transfer_logfile_name(), fields)    

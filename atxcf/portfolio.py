@@ -1,30 +1,33 @@
-import accounts
-import cmd
+from accounts import get_assets, get_balance
+from PriceNetwork import get_prices, get_nav
 
 
 def get_portfolio(name):
+    """
+    Returns a dict with the specified user's portfolio.
+    """
     portfolio = {}
-    for asset in accounts.get_assets(name):
+    for asset in get_assets(name):
         if asset != name:
-            portfolio[asset] = accounts.get_balance(name, asset)
+            balance = get_balance(name, asset)
+            if balance != 0.0:
+                portfolio[asset] = balance
     return portfolio
 
 
 def get_portfolio_values(name, base_asset):
+    """
+    Returns a dict with the prices of the assets in the
+    named user's portfolio in terms of the base_asset.
+    """
     port = get_portfolio(name)
-    values = {}
-    for asset, balance in port.iteritems():
-        if asset != name:
-            price = cmd.get_price(balance, asset, base_asset)
-            values[asset] = (balance, price)
-    return values
+    return get_prices(port, base_asset)
 
 
 def get_portfolio_nav(name, base_asset):
-    values = get_portfolio_values(name, base_asset)
-    total = 0.0
-    for asset, value in values.iteritems():
-        if asset != name:
-            total += value[1]
-    return total
+    """
+    Returns the specified portfolio's net asset value in
+    terms of the base_asset.
+    """
+    return get_nav(get_portfolio(name), base_asset)
 

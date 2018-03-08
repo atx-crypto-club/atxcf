@@ -7,11 +7,12 @@ from collections import (OrderedDict, defaultdict)
 
 import accounts
 from settings import (
-    get_settings_option, get_settings, set_settings, set_option
+    get_settings_option, get_settings, set_settings, set_option,
+    get_setting
 )
 
 from utils import (
-    append_csv_row
+    append_record
 )
 
 _xch_state = None
@@ -23,19 +24,82 @@ def _init_mkt_state():
     the Market dict below.
     """
     pass
-        
+
+
 def get_exchange_logfile_name():
     """
     Returns the exchange logfile name from the options.
     """
-    return get_settings_option("exchangelog", "exchange.csv")
+    return get_setting("xch",
+                       "exchangelog",
+                       default="exchange.csv")
 
 
 def get_exchange_marketlog_name():
     """
     Returns the marketlog file name from the options.
     """
-    return get_settings_option("marketlog", "market.csv")
+    return get_setting("xch",
+                       "marketlog",
+                       default="market.csv")
+
+
+def get_default_exchange_fee_rate():
+    """
+    Returns the default exchange fee rate in percent.
+    """
+    return get_setting("xch",
+                       "default_fee_rate",
+                       default=0.01)
+
+
+def set_default_exchange_fee_rate(fee_rate):
+    """
+    Sets the default exchange fee rate in percent.
+    """
+    set_setting("xch",
+                "default_fee_rate",
+                fee_rate)
+
+
+def get_default_exchange_fee_account():
+    """
+    Gets the default exchange fee account where fees
+    get routed to for any asset.
+    """
+    return get_setting("xch",
+                       "default_fee_account",
+                       default="xch_fees")
+
+
+def set_default_exchange_fee_account(fee_account):
+    """
+    Sets the default exchange fee account where fees
+    get routed to for any asset.
+    """
+    set_setting("xch",
+                "default_fee_account",
+                default="xch_fees")
+
+
+def get_exchange_fee_rate(asset):
+    """
+    Gets the exchange fee rate for the specified asset.
+    """
+    return get_setting("xch",
+                       "fee_rates",
+                       asset,
+                       default=get_default_exchange_fee_rate())
+
+
+def set_exchange_fee_rate(asset, fee_rate):
+    """
+    Sets the exchange fee rate for the specified asset.
+    """
+    set_setting("xch",
+                "fee_rates",
+                asset,
+                fee_rate)
 
 
 def exchange(swap_a, swap_b, meta={}):
@@ -45,15 +109,35 @@ def exchange(swap_a, swap_b, meta={}):
 
     Both arguments are tuples of the form (user, asset, amount).
     """
+    # TODO: check if sufficient balance for exchange and fees for both parties
+    local_meta = meta
+    
     cur_time = time.time()
-    accounts.transfer(swap_a[0], swap_b[0], swap_a[1], swap_a[2], cur_time, False, meta)
-    accounts.transfer(swap_b[0], swap_a[0], swap_b[1], swap_b[2], cur_time, False, meta)
+    accounts.transfer(swap_a[0], swap_b[0],
+                      swap_a[1], swap_a[2],
+                      cur_time, False, local_meta)
+    accounts.transfer(swap_b[0], swap_a[0],
+                      swap_b[1], swap_b[2],
+                      cur_time, False, local_meta)
 
+    # extract fee if any
+    if fee_rate != 0.0:
+        fee_a = get_exchange_fee_rate(swap_a[1])
+        fee_b = get_exchange_fee_rate(swap_b[1])
+        local_meta.update({"fee_a": fee_a,
+                           "fee_b": fee_b})
+        accounts.transfer(swap_a[0], get_exchange_fee_account(swap_a[1]),
+                          swap_a[1], swap_a[2] * fee_a,
+                          cur_time, False, local_meta)
+        accounts.transfer(swap_b[0], get_exchange_fee_account(swap_b[1]),
+                          swap_b[1], swap_b[2] * fee_b,
+                          cur_time, False, local_meta)
+    
     # append to exchange log csv
     asset_pair = swap_a[1] + "/" + swap_b[1]
     rate = float(swap_b[2]) / float(swap_a[2])
-    fields=[cur_time, swap_a[0], swap_b[0], asset_pair, swap_a[2], swap_b[2], rate, meta]
-    append_csv_row(get_exchange_logfile_name(), fields)
+    fields=[cur_time, swap_a[0], swap_b[0], asset_pair, swap_a[2], swap_b[2], rate, local_meta]
+    append_record(get_exchange_logfile_name(), fields)
 
     accounts.sync_account_settings()
 
@@ -202,7 +286,7 @@ class Market(object):
         fields=[new_order.time, self._rec_id, new_order.id, new_order_type,
                 new_order.user, new_order.to_asset, new_order.from_asset,
                 new_order.amount, new_order.price]
-        append_csv_row(get_exchange_marketlog_name(), fields)
+        append_record(get_exchange_marketlog_name(), fields)
         self._rec_id += 1
         # keep the settings updated so we can continue
         # where we left off when the process restarts.

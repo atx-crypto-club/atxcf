@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import webapi
 import settings
 from settings import get_settings_option
-from . import start_agent
 import PriceNetwork
 
 import threading
@@ -37,8 +35,6 @@ def _price_updater_enabled():
     """
     return get_settings_option("price_updater_thread_enabled", default=False)
 
-
-PriceNetwork.init() # avoid lazy init
 
 webapi_enabled = _webapi_enabled()
 agent_enabled = _agent_enabled()
@@ -77,6 +73,7 @@ else:
     print "Known commands: {}".format(sorted(cmds))
 
 def _launch_webapi():
+    import webapi
     webapi.main(argv[1:])
 
 # webapi thread
@@ -89,6 +86,7 @@ if webapi_enabled:
 # slackbot atxcf agent thread
 agent_thread = None
 if agent_enabled:
+    from agent import main as start_agent
     agent_thread = threading.Thread(target=start_agent)
     print "Starting slackbot agent thread..."
     agent_thread.start()

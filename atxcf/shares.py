@@ -2,13 +2,17 @@ import time
 from portfolio import get_portfolio_nav, get_portfolio
 from accounts import (
     set_balance, transfer, inc_balance, dec_balance, has_user,
-    get_users, get_balance, add_post_set_balance_callback
+    get_users, get_balance, add_post_set_balance_callback,
+    add_user
 )
 from settings import get_setting, set_setting
 import cmd
-from utils import append_csv_row
+from utils import append_record
 from PriceSource import PriceSource
 from PriceNetwork import add_source
+
+from threading import current_thread, RLock
+from collections import defaultdict
 
 class SharesError(RuntimeError):
     pass
@@ -61,10 +65,94 @@ def set_initial_rate_asset(portfolio_name, asset):
     Modifiy the initial rate asset setting for the specified
     portfolio.
     """
-    return set_setting("shares",
+    set_setting("shares",
+                portfolio_name,
+                "initial_rate_asset",
+                asset)
+
+
+def get_share_creation_fee_rate(portfolio_name):
+    """
+    Returns the fee applied to share creation in percent of value used.
+    to create shares. Doesn't apply to share granting.
+    """
+    return get_setting("shares",
                        portfolio_name,
-                       "initial_rate_asset",
-                       asset)
+                       "share_creation_fee_rate",
+                       default=0.01)
+
+
+def set_share_creation_fee_rate(portfolio_name, fee):
+    """
+    Sets the share creation fee.
+    """
+    set_setting("shares",
+                portfolio_name,
+                "share_creation_fee_rate",
+                fee)
+
+
+def get_share_redemption_fee_rate(portfolio_name):
+    """
+    Returns the fee applied to share redemption in percent of value of
+    assets redeemed.
+    """
+    return get_setting("shares",
+                       portfolio_name,
+                       "share_redemption_fee_rate",
+                       default=0.025)
+
+
+def set_share_redemption_fee_rate(portfolio_name, fee):
+    """
+    Sets the share redemption fee in percent of value of redeemed assets.
+    """
+    set_setting("shares",
+                portfolio_name,
+                "share_redemption_fee_rate",
+                fee)
+
+    
+def get_share_creation_fee_account(portfolio_name):
+    """
+    Where share creation fees end up for a particular portfolio.
+    """
+    default_name = portfolio_name + "_share_creation_fees"
+    return get_setting("shares",
+                       portfolio_name,
+                       "share_creation_fee_account",
+                       default=default_name)
+
+                       
+def set_share_creation_fee_account(portfolio_name, fee_account):
+    """
+    Set where share creation fees end up for a particular portfolio.
+    """
+    set_setting("shares",
+                portfolio_name,
+                "share_creation_fee_account",
+                fee_account)
+
+
+def get_share_redemption_fee_account(portfolio_name):
+    """
+    Where share redemption fees end up for a particular portfolio's shares.
+    """
+    default_name = portfolio_name + "_share_redemption_fees"
+    return get_setting("shares",
+                       portfolio_name,
+                       "share_redemption_fee_account",
+                       default=default_name)
+
+                       
+def set_share_redemption_fee_account(portfolio_name, fee_account):
+    """
+    Set where share creation fees end up for a particular portfolio's shares.
+    """
+    set_setting("shares",
+                portfolio_name,
+                "share_redemption_fee_account",
+                fee_account)
 
 
 def get_num_shares_outstanding(portfolio_name):
@@ -169,7 +257,7 @@ def grant_shares(portfolio_name, shareholder_name, num_shares_to_grant):
 
     fields = ["grant", cur_time, _next_serial_no, shareholder_name,
               num_shares_to_grant, "", 0.0, xch_rate]
-    append_csv_row(get_shares_logfile_name(portfolio_name), fields)
+    append_record(get_shares_logfile_name(portfolio_name), fields)
 
     _next_serial_no += 1
     set_setting("shares", "serial_no", _next_serial_no)
@@ -196,6 +284,8 @@ def create_shares(portfolio_name, shareholder_name, assets):
 
     cur_time = time.time()
 
+    # TODO: throw an error if num shares is zero and we have assets
+
     # for each asset offered in exchange for shares, compute
     # number of new shares to create, then transfer the assets
     # to the portfolio and credit the shareholder with the new
@@ -211,6 +301,11 @@ def create_shares(portfolio_name, shareholder_name, assets):
             xch_rates[asset] = cmd.get_price(initial_rate,
                                              initial_rate_asset,
                                              asset)
+
+    fee_rate = get_share_creation_fee_rate(portfolio_name) / 100.0 # normalized from percent
+    fee_account = get_share_creation_fee_account(portfolio_name)
+    if not has_user(fee_account):
+        add_user(fee_account)
     
     share_balance_per_asset = {}
     for asset, balance in assets.iteritems():
@@ -223,9 +318,18 @@ def create_shares(portfolio_name, shareholder_name, assets):
         meta = {
             "create_shares": new_shares,
             "xch_rate": xch_rate,
-            "serial_no": _next_serial_no
+            "serial_no": _next_serial_no,
+            "value": balance,
+            "fee": fee_rate
         }
+        
         # TODO: check for sufficient shareholder balances
+
+        # extract fee if any
+        if fee_rate != 0.0:
+            transfer(shareholder_name, fee_account, asset, balance * fee_rate,
+                     cur_time, meta)
+                       
         transfer(shareholder_name, portfolio_name, asset, balance,
                  cur_time, meta)
         transfer(portfolio_name, shareholder_name, portfolio_name,
@@ -233,7 +337,7 @@ def create_shares(portfolio_name, shareholder_name, assets):
         
         fields = ["create", cur_time, _next_serial_no, shareholder_name,
                   new_shares, asset, balance, xch_rate]
-        append_csv_row(get_shares_logfile_name(portfolio_name), fields)
+        append_record(get_shares_logfile_name(portfolio_name), fields)
 
         _next_serial_no += 1
         set_setting("shares", "serial_no", _next_serial_no)
@@ -267,23 +371,40 @@ def redeem_shares(portfolio_name, shareholder_name, num_shares_to_redeem):
     for asset in portfolio:
         xch_rates[asset] = get_portfolio_nav_share_ratio(portfolio_name, asset)
 
+    fee_rate = get_share_redemption_fee_rate(portfolio_name) / 100.0 # normalized from percent
+    fee_account = get_share_redemption_fee_account(portfolio_name)
+    if not has_user(fee_account):
+        add_user(fee_account)
+                       
     for asset, balance in portfolio.iteritems():
         xch_rate = xch_rates[asset]
+        value = balance * redemption_ratio
         meta = {
-            "redeem_shares": num_shares_to_redeem,
             "xch_rate": xch_rate,
-            "serial_no": _next_serial_no
+            "serial_no": _next_serial_no,
+            "value": value,
+            "fee": fee_rate
         }
-        transfer(portfolio_name, shareholder_name, asset, balance * redemption_ratio, cur_time, meta)
+
+        # extract fee if any
+        if fee_rate != 0.0:
+            transfer(shareholder_name, fee_account, asset,
+                     value * fees,
+                     cur_time, meta)
         
-        fields = ["redeem", cur_time, _next_serial_no, shareholder_name, num_shares_to_redeem, asset, balance, xch_rate]
-        append_csv_row(get_shares_logfile_name(portfolio_name), fields)
+        transfer(portfolio_name, shareholder_name, asset,
+                 value, cur_time, meta)
+        
+        fields = ["redeem", cur_time, _next_serial_no, shareholder_name,
+                  num_shares_to_redeem, asset, balance, xch_rate]
+        append_record(get_shares_logfile_name(portfolio_name), fields)
         
         _next_serial_no += 1
         set_setting("shares", "serial_no", _next_serial_no)
 
     # Destroy the shares all at once.
-    transfer(shareholder_name, portfolio_name, portfolio_name, num_shares_to_redeem, cur_time, meta)
+    transfer(shareholder_name, portfolio_name, portfolio_name,
+             num_shares_to_redeem, cur_time, meta)
 
 
 class PortfolioNAV(PriceSource):
@@ -291,6 +412,11 @@ class PortfolioNAV(PriceSource):
     def __init__(self, base_symbols=["BTC", "USD"]):
         super(PortfolioNAV, self).__init__()
         self._base_symbols = base_symbols
+
+        # to track recursive calls
+        self._lock = RLock()
+        self._recur = defaultdict(lambda: defaultdict(str))
+        self._recur_depth = defaultdict(int)
 
 
     def get_shared_portfolios(self):
@@ -327,15 +453,50 @@ class PortfolioNAV(PriceSource):
         return mkts
 
 
+    def _get_depth(self):
+        with self._lock:
+            return self._recur_depth[current_thread().ident]
+
+
+    def _inc_depth(self):
+        with self._lock:
+            self._recur_depth[current_thread().ident] += 1
+
+            
+    def _dec_depth(self):
+        with self._lock:
+            self._recur_depth[current_thread().ident] -= 1
+            if self._recur_depth[current_thread().ident] <= 0:
+                self._recur_depth[current_thread().ident] = 0
+                self._recur = defaultdict(lambda: defaultdict(str))
+            
+
     def get_price(self, from_asset, to_asset, amount=1.0):
         """
         Returns the price known of one portfolio's share in terms of another asset
         or vice versa.
         """
+        if amount == 0.0:
+            return amount
+        
         from_value = 0.0
         to_value = 0.0
         base_asset = self._base_symbols[0]
 
+        price = 0.0
+
+        self._inc_depth()
+        
+        # If we have already priced this in this series of recursive calls,
+        # let subsequent recursive calls return a price of zero so it's not
+        # counted multiple times.
+        with self._lock:
+            if self._recur[current_thread().ident][from_asset] == to_asset:
+                self._dec_depth()
+                return price
+            else:
+                self._recur[current_thread().ident][from_asset] = to_asset
+        
         if has_shares(from_asset):
             from_value = get_portfolio_nav_share_ratio(from_asset, base_asset)
         else:
@@ -346,11 +507,11 @@ class PortfolioNAV(PriceSource):
         else:
             to_value = cmd.get_price(1.0, to_asset, base_asset)
 
-        price = 0.0
         try:
             price = from_value / to_value
         except ZeroDivisionError:
             pass
+        self._dec_depth()
         return price * amount
             
             

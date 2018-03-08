@@ -20,8 +20,6 @@ from accounts import (
     has_user, add_user, get_user_email, set_user_email
 )
 
-import coinmarketcap # for top marketcap coins and stats
-
 
 class AgentError(PriceNetwork.PriceNetworkError):
     pass

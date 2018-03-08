@@ -11,9 +11,13 @@ import bittrex
 import settings
 from settings import (get_creds, has_creds)
 import cache
-from settings import get_settings_option, get_settings, set_settings
+from settings import (
+    get_settings_option, get_settings, set_settings,
+    get_setting, has_setting, set_setting
+)
 
 import requests
+import requests.exceptions
 import re
 from pyquery import PyQuery as pq
 import unicodedata
@@ -355,6 +359,8 @@ class CryptoAssetCharts(PriceSource):
             timeout = self._update_interval
             if time.time() - self._response_ts > timeout:
                 self._response = requests.get(self._req_url)
+                if self._response.status_code != 200:
+                    raise PriceSourceError("%s: Error getting cryptoassetcharts.info" % self._class_name())
                 self._response_ts = time.time()
             doc = pq(self._response.content)
             tbl = doc("#tableAssets")
@@ -437,6 +443,108 @@ class CryptoAssetCharts(PriceSource):
         return price * amount
 
 
+class CoinExchange(PriceSource):
+    """
+    Gets pricing info from coinexchange.io.
+    """
+
+    def __init__(self):
+        super(CoinExchange, self).__init__()
+        self._req_url = "https://www.coinexchange.io/api/v1/getmarkets"
+        self._price_url = "https://www.coinexchange.io/api/v1/getmarketsummaries"
+        self._mkt_info = None
+        self._mkt_prices = None
+        self._response_ts = 0
+        self._lock = threading.RLock()
+
+
+    def _update_mkt_info(self):
+        timeout = self._update_interval
+        cur_time = time.time()
+        if cur_time - self._response_ts > timeout:
+
+            try:
+                reqs = (requests.get(self._req_url),
+                        requests.get(self._price_url))
+            except requests.exceptions.ConnectionError as e:
+                raise PriceSourceError("%s: %s" % (self._class_name(), str(e)))
+            for req in reqs:
+                if req.status_code != 200:
+                    code = req.status_code
+                    url = req.url
+                    raise PriceSourceError("%s: HTTP %d: error loading %s" % (self._class_name(), code, url))
+
+            try:
+                self._mkt_info = reqs[0].json()
+                summaries = reqs[1].json()
+            except ValueError as e:
+                raise PriceSourceError("%s: %s" % (self._class_name(), str(e)))
+            
+            mkt_ids = {}
+            for mkt in summaries["result"]:
+                mkt_ids[mkt["MarketID"]] = mkt
+            
+            self._mkt_prices = {}
+            for mkt in self._mkt_info["result"]:
+                mkt_str = mkt["MarketAssetCode"]+"/"+mkt["BaseCurrencyCode"]
+                mkt_id = mkt["MarketID"]
+                if mkt_id in mkt_ids: # some markets are inactive it seems.
+                    self._mkt_prices[mkt_str] = mkt_ids[mkt_id]["LastPrice"]
+            self._response_ts = cur_time
+
+    
+    def get_symbols(self):
+        """
+        List all symbols traded at the exchange.
+        """
+        with self._lock:
+            self._update_mkt_info()
+            return list(set([mkt["MarketAssetCode"] for mkt in self._mkt_info["result"]]))
+
+
+    def get_base_symbols(self):
+        """
+        List all base currencies at this exchange.
+        """
+        with self._lock:
+            self._update_mkt_info()
+            return list(set([mkt["BaseCurrencyCode"] for mkt in self._mkt_info["result"]]))
+
+
+    def get_markets(self):
+        """
+        List all supported markets at this exchange.
+        """
+        with self._lock:
+            self._update_mkt_info()
+            return list(set([mkt["MarketAssetCode"]+"/"+mkt["BaseCurrencyCode"]
+                             for mkt in self._mkt_info["result"]]))
+
+
+    def get_price(self, from_asset, to_asset, amount = 1.0):
+        """
+        Returns the last price from acquired.
+        """
+        with self._lock:
+            self._update_mkt_info()
+            mkt_str = from_asset + "/" + to_asset
+
+            inverse = False
+            if not mkt_str in self._mkt_prices:
+                mkt_str = to_asset + "/" + from_asset
+                if not mkt_str in self._mkt_prices:
+                    raise PriceSourceError("%s not in market" % mkt_str)
+                inverse = True
+
+            price = float(self._mkt_prices[mkt_str])
+            if inverse:
+                try:
+                    price = 1.0/price
+                except ZeroDivisionError:
+                    pass
+            return price * amount
+            
+    
 class Bittrex(PriceSource):
     """
     Using bittrex as an asset price source.
@@ -596,64 +704,68 @@ class Bittrex(PriceSource):
         return price * amount
 
 
+
+def get_conversions():
+    """
+    Returning dict of conversions used.
+    """
+    # some resonable defaults
+    defaults = {
+        "XBT/BTC": 1.0,
+        "mNXT/NXT": 1000.0,
+        "sat/BTC": 100000000,
+        "XDG/DOGE": 1.0,
+        "STR/XLM": 1.0
+    }
+    return get_setting("conversions", default=defaults)
+
+
+def set_conversions(conv):
+    """
+    Setting conversions used. Should be a dict.
+    """
+    set_setting("conversions", conv)
+
+
+def get_conversion(conv_mkt):
+    """
+    Returns a particular conversion mkt string.
+    """
+    return get_setting("conversions", conv_mkt)
+
+
+def set_conversion(conv_mkt, value):
+    """
+    Sets a particular conversion.
+    """
+    # TODO: check conv_mkt for FROM/TO form
+    set_setting("conversions", conv_mkt, value)
+
+    
 class Conversions(PriceSource):
     """
     Contains mappings and conversions between symbols such as
     mNXT <-> NXT, XBT <-> BTC, etc.
     """
 
-    def __init__(self):
-        super(Conversions, self).__init__()
-
-        #def test0xbt_func():
-        #    return 0.31337
-
-        #def test1test0_func():
-        #    return 1337
-
-        # default conversions
-        # TODO: support arbitrary conversion functions other than linear f(x) -> x*C
-        self._mapping = {
-            "XBT/BTC": 1.0,
-            "mNHZ/NHZ": 1000.0,
-            "mNXT/NXT": 1000.0,
-            "sat/BTC": 100000000,
-            "_Coinomat1/Coinomat1": 1.0,
-            "_MMNXT/MMNXT": 1.0,
-            "_CoinoUSD/CoinoUSD": 1.0,
-            "XDG/DOGE": 1.0,
-            #"TEST0/XBT": test0xbt_func,
-            #"TEST1/TEST0": test1test0_func
-        }
-
-        # read conversions from settings file
-        sett = get_settings()
-        if not "Conversions" in sett:
-            sett["Conversions"] = self._mapping
-            set_settings(sett)
-        else:
-            conv = sett["Conversions"]
-            self._mapping.update(conv)
-
-        self._lock = threading.RLock()
-
+    def _get_conversions(self):
+        return get_conversions()
+    
 
     def get_symbols(self):
         symbols = set()
-        with self._lock:
-            for key in self._mapping.iterkeys():
-                symbol = key.split("/")
-                symbols.add(symbol[0])
-                symbols.add(symbol[1])
+        for key in self._get_conversions():
+            symbol = key.split("/")
+            symbols.add(symbol[0])
+            symbols.add(symbol[1])
         return list(symbols)
 
 
     def get_base_symbols(self):
         symbols = set()
-        with self._lock:
-            for key in self._mapping.iterkeys():
-                symbol = key.split("/")
-                symbols.add(symbol[1])
+        for key in self._get_conversions():
+            symbol = key.split("/")
+            symbols.add(symbol[1])
         return list(symbols)
 
 
@@ -661,8 +773,7 @@ class Conversions(PriceSource):
         """
         Returns list of conversions supported as if they were markets themselves.
         """
-        with self._lock:
-            return list(self._mapping.iterkeys())
+        return list(self._get_conversions().iterkeys())
 
 
     def get_price(self, from_asset, to_asset, amount = 1.0):
@@ -677,15 +788,13 @@ class Conversions(PriceSource):
 
         inverse = False
         trade_pair_str = to_asset + '/' + from_asset
-        if not trade_pair_str in self._mapping.iterkeys():
+        if not trade_pair_str in self._get_conversions().iterkeys():
             inverse = True
             trade_pair_str = from_asset + '/' + to_asset
-            if not trade_pair_str in self._mapping.iterkeys():
+            if not trade_pair_str in self._get_conversions().iterkeys():
                 raise PriceSourceError("%s: Missing market" % self._class_name())
 
-        price = 0.0
-        with self._lock:
-            price = self._mapping[trade_pair_str]
+        price = self._get_conversions()[trade_pair_str]
         if hasattr(price, '__call__'):
             price = price()
         price = float(price)
@@ -695,3 +804,75 @@ class Conversions(PriceSource):
             except ZeroDivisionError:
                 pass
         return price * amount
+    
+
+class Coinigy(PriceSource):
+    """
+    Coinigy interface for atxcf-bot
+    """
+
+    @staticmethod
+    def _get_requires_creds():
+        return True
+
+    
+    def __init__(self):
+        super(Coinigy, self).__init__()
+
+        self._markets = []
+
+
+    def get_symbols(self):
+        """
+        List of known symbols.
+        """
+        symbols = set()
+        for mkt in self.get_markets():
+            from_asset, to_asset = mkt.split("/")
+            symbols.add(from_asset)
+            symbols.add(to_asset)
+        return list(symbols)
+
+
+    def get_base_symbols(self):
+        """
+        List of market base symbols.
+        """
+        symbols = set()
+        for mkt in self.get_markets():
+            from_asset, to_asset = mkt.split("/")
+            symbols.add(to_asset)
+        return list(symbols)
+        
+        
+    def get_markets(self):
+        """
+        List all markets known by Coinigy.
+        """
+        if not self._markets:
+            key = self._class_name() + "._markets"
+            if cache.has_key(key):
+                self._markets = cache.get_val(key)
+            else:
+                if not has_creds(self._class_name()):
+                    raise PriceSourceError("%s: missing credentials" % self._class_name())
+                api_key, api_secret = get_creds(self._class_name())
+                headers = {
+                    'Content-Type': 'application/json',
+                    'X-API-KEY': api_key,
+                    'X-API-SECRET': api_secret
+                }
+                result = requests.post("https://api.coinigy.com/api/v1/exchanges", headers=headers)
+                res = json.loads(result.text)
+                if not 'data' in res:
+                    raise PriceSourceError(str(res))
+                self._markets = [item['mkt_name'] for item in res['data']]
+                cache.set_val(key, self._markets, expire=60*60*24)
+        return self._markets
+
+
+    def get_price(self, from_asset, to_asset, amount = 1.0):
+        """
+        Returns ticker data from the Coingy API
+        """
+        raise PriceSourceError("%s: get_price not yet implemented." % self._class_name())

@@ -16,6 +16,7 @@ Module deps:
   - filelock
   - peewee
   - pymemcache
+  - arrow
   - krakenex (optional for now)
   - mysqldb (optional)
 
