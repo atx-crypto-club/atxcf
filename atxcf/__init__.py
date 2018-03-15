@@ -60,11 +60,15 @@ from .PriceNetwork import (
 from .PriceNetwork import init as init_price_network
 
 from .settings import (
-    init_settings, get_settings, set_settings,
+    init_settings, clear_settings, get_settings, set_settings,
     reload_settings, write_settings, get_option, set_option,
     get_options, remove_option, get_creds, set_creds, get_all_creds,
     remove_creds, SettingsError, has_setting, set_setting,
-    get_setting, remove_setting, get_settings_filename, get_last_modified
+    get_setting, remove_setting, get_settings_filename, get_last_modified,
+    get_default_program_url, set_settings_filename,
+    add_settings_pre_change_callback, add_settings_post_change_callback,
+    remove_settings_pre_change_callback, remove_settings_post_change_callback,
+    get_settings_change_callbacks
 )
 
 from .cmd import (
@@ -85,7 +89,11 @@ from .accounts import (
     get_transfer_logfile_name, set_transfer_logfile_name,
     get_user_ledger_name, get_assets, get_user_changelog,
     set_user_changelog, get_metadata_value, set_metadata_value,
-    set_domain, get_domain, get_metadata
+    set_domain, get_domain, get_metadata,
+    has_pre_set_balance_callback, has_post_set_balance_callback,
+    add_pre_set_balance_callback, del_pre_set_balance_callback,
+    add_post_set_balance_callback, del_post_set_balance_callback,
+    inc_balance, dec_balance, InsufficientBalance
 )
 
 from .xch import (

@@ -5,7 +5,7 @@ from accounts import (
     get_users, get_balance, add_post_set_balance_callback,
     add_user
 )
-from settings import get_setting, set_setting
+from settings import get_setting, set_setting, get_settings_filename
 import cmd
 from utils import append_record
 from PriceSource import PriceSource
@@ -19,11 +19,12 @@ class SharesError(RuntimeError):
 
 
 def get_shares_logfile_name(portfolio_name):
-    default_shares_log = "shares.%s.csv" % portfolio_name
+    default = "%s.shares.%s.csv" % (get_settings_filename(),
+                                    portfolio_name)
     return get_setting("shares",
                        portfolio_name,
                        "shareslog",
-                       default=default_shares_log)
+                       default=default)
 
 
 def get_initial_rate(portfolio_name):

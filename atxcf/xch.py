@@ -8,7 +8,7 @@ from collections import (OrderedDict, defaultdict)
 import accounts
 from settings import (
     get_settings_option, get_settings, set_settings, set_option,
-    get_setting
+    get_setting, get_settings_filename
 )
 
 from utils import (
@@ -30,18 +30,20 @@ def get_exchange_logfile_name():
     """
     Returns the exchange logfile name from the options.
     """
+    default = "%s.exchange.csv" % get_settings_filename()
     return get_setting("xch",
                        "exchangelog",
-                       default="exchange.csv")
+                       default=default)
 
 
 def get_exchange_marketlog_name():
     """
     Returns the marketlog file name from the options.
     """
+    default = "%s.market.csv" % get_settings_filename()
     return get_setting("xch",
                        "marketlog",
-                       default="market.csv")
+                       default=default)
 
 
 def get_default_exchange_fee_rate():

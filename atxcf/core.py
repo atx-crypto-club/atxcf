@@ -7,12 +7,12 @@ import os
 import os.path
 import json
 from json import dumps
-import filelock
 import time
 import threading
 import copy
 import csv
 from collections import defaultdict
+import uuid
 
 
 def append_record(csv_filename, fields):
@@ -20,9 +20,10 @@ def append_record(csv_filename, fields):
     Appends record to specified csv file. 'fields' should be
     a list.
     """
+    local_fields = [uuid.uuid1()] + fields
     with open(csv_filename, 'ab') as f:
         writer = csv.writer(f)
-        writer.writerow(fields)
+        writer.writerow(local_fields)
 
 
 def _log_setting(fields):
@@ -116,7 +117,7 @@ def get_settings_change_callbacks(*args, **kwargs):
     global _settings_change_callbacks
     global _js_settings_lock
 
-    prefix = "default"
+    prefix = ""
     if "prefix" in kwargs:
         prefix = kwargs["prefix"]
 
@@ -125,32 +126,15 @@ def get_settings_change_callbacks(*args, **kwargs):
         args_key = _args_list_key(args)
     cbs = []
     with _js_settings_lock:
-        for name, callbacks in _settings_change_callbacks[args_key]:
-            if name.startswith(prefix):
+        for name, callbacks in _settings_change_callbacks[args_key].iteritems():
+            if prefix and name.startswith(prefix):
                 for cb in callbacks:
                     cbs.append(cb) # TODO: clean this up
     return cbs
 
 
 def _invoke_callbacks(*args, **kwargs):
-    global _settings_change_callbacks
-    global _js_settings_lock
-
-    prefix = "default"
-    if "prefix" in kwargs:
-        prefix = kwargs["prefix"]
-
-    args_key = ""
-    if len(args) > 0:
-        args_key = _args_list_key(args)
-
-    cbs = []
-    with _js_settings_lock:
-        for name, callbacks in _settings_change_callbacks[args_key]:
-            if name.startswith(prefix):
-                for cb in callbacks:
-                    cbs.append(cb) # TODO: clean this up
-    for cb in cbs:
+    for cb in get_settings_change_callbacks(*args, **kwargs):
         cb()
 
 
@@ -231,15 +215,12 @@ def set_settings_filename(filename):
     _js_settings_filename = filename
 
 
-def _get_settings_lockfile_name():
-    return get_settings_filename() + ".lock"
-
-    
-_js_filelock = filelock.FileLock(_get_settings_lockfile_name())
+def get_default_program_url():
+    return "https://gitlab.catx.io/catx/atxcf"
 
 
 _settings_log = None
-def init_settings():
+def init_settings(do_write=False):
     """
     Initializes settings dict with default values.
     """
@@ -249,13 +230,21 @@ def init_settings():
     with _js_settings_lock:
         cur_time = time.time()
         _js_settings = {
-            "program_url": "https://gitlab.catx.io/catx/atxcf",
+            "program_url": get_default_program_url(),
             "version": "0.1",
             "last_modified": cur_time,
             "options": {},
-            "credentials": {}
         }
         _js_settings_ts = cur_time
+    if do_write:
+        write_settings()
+
+        
+def clear_settings():
+    """
+    Resets the settings file.
+    """
+    init_settings(True)
 
 
 def _get_settings():
@@ -265,7 +254,6 @@ def _get_settings():
     """
     global _js_settings
     global _js_settings_lock
-    global _js_filelock
     doInit = False
     fn = get_settings_filename()
     with _js_settings_lock:
@@ -274,14 +262,13 @@ def _get_settings():
             if not os.path.isfile(fn):
                 doInit = True
             else:
-                with _js_filelock:
-                    try:
-                        _js_settings = json.load(open(fn))
-                        _js_settings_ts = get_last_modified(fn)
-                    except IOError as e:
-                        raise SettingsError("Error loading %s: %s" % (fn, e.message))
+                try:
+                    _js_settings = json.load(open(fn))
+                    _js_settings_ts = get_last_modified(fn)
+                except IOError as e:
+                    raise SettingsError("Error loading %s: %s" % (fn, e.message))
     if doInit:
-        init_settings()
+        init_settings(True)
     return _js_settings
 
 
@@ -345,7 +332,8 @@ def get_settingslog_filename():
     """
     global _settings_log
     if not _settings_log:
-        _settings_log = get_setting("settings_log", default="settings_log.csv")
+        default = "%s.settings_log.csv" % get_settings_filename()
+        _settings_log = get_setting("settings_log", default=default)
     return _settings_log
 
     
@@ -376,7 +364,7 @@ def set_setting(*args, **kwargs):
     global _js_settings_lock
     if len(args) < 2:
         raise SettingsError("Invalid number of arguments to set_setting")
-    _invoke_pre_change_callbacks(*args)
+    _invoke_pre_change_callbacks(*args[:-1])
     with _js_settings_lock:
         sett = _get_settings()
         for arg in args[:-2]:
@@ -386,7 +374,7 @@ def set_setting(*args, **kwargs):
             sett = next_sett
         sett[args[-2]] = args[-1]
         _js_settings_ts = time.time()
-    _invoke_post_change_callbacks(*args)
+    _invoke_post_change_callbacks(*args[:-1])
     meta = None
     if "meta" in kwargs:
         meta = kwargs["meta"]
@@ -431,7 +419,6 @@ def write_settings():
     """
     Writes the settings dict to disk.
     """
-    global _js_filelock
     global _js_settings_ts
     global _js_settings_lock
     global _prevent_write
@@ -439,19 +426,18 @@ def write_settings():
         return
 
     fn = get_settings_filename()
-    if _js_settings_ts <= get_last_modified(fn):
-        return
+    #if _js_settings_ts <= get_last_modified(fn):
+    #    return
     
     set_setting("last_modified", _js_settings_ts)
     with _js_settings_lock:
-        with _js_filelock:
-            try:
-                with open(fn, 'w') as f:
-                    json.dump(_get_settings(), f, sort_keys=True,
-                              indent=4, separators=(',', ': '))
-            except IOError as e:
-                raise SettingsError("Error writing %s: %s" % (fn, e.message))
-    _js_settings_ts = get_last_modified(fn)
+        try:
+            with open(fn, 'w') as f:
+                json.dump(_get_settings(), f, sort_keys=True,
+                          indent=4, separators=(',', ': '))
+        except IOError as e:
+            raise SettingsError("Error writing %s: %s" % (fn, e.message))
+    #_js_settings_ts = get_last_modified(fn)
 
 
 def get_option(option, default=None):
@@ -607,6 +593,6 @@ def _sync_settings():
             write_settings()
 
 get_settings()
-_js_sync_thread = threading.Thread(target=_sync_settings)
-_js_sync_thread.daemon = True
-_js_sync_thread.start()
+#_js_sync_thread = threading.Thread(target=_sync_settings)
+#_js_sync_thread.daemon = True
+#_js_sync_thread.start()

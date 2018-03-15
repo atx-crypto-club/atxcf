@@ -69,7 +69,7 @@ if len(argv) > 0:
     print str(cmd._run_cmd(*argv))
 else:
     cmds = cmd.get_commands() + ['webapi', 'nowebapi', 'agent', 'noagent',
-                                 'tornado']
+                                 'tornado', 'updater', 'noupdater']
     print "Known commands: {}".format(sorted(cmds))
 
 def _launch_webapi():

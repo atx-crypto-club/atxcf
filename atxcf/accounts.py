@@ -12,14 +12,22 @@ from json import dumps
 
 from settings import (
     get_settings_option, get_settings, set_settings, set_option,
-    get_option, get_setting, set_setting
+    get_option, get_setting, set_setting, get_settings_filename
 )
 
 from utils import (
     append_record
 )
 
-import cmd
+from PriceNetwork import get_price
+
+class InsufficientBalance(RuntimeError):
+   def __init__(self, from_user, to_user, asset, amount, meta):
+      self.from_user = from_user
+      self.to_user = to_user
+      self.asset = asset
+      self.amount = amount
+      self.meta = meta
 
 _lock = threading.RLock()
 
@@ -80,7 +88,7 @@ def number_of_users():
     """
     Returns the number of users known to the system.
     """
-    return len(_get_accounts())
+    return len(_get_users())
 
 
 def get_users():
@@ -101,7 +109,7 @@ def get_default_user_changelog_filename(name):
     """
     Returns default changelog filename for specfied user.
     """
-    return "changes.%s.csv" % name
+    return "%s.changes.%s.csv" % (get_settings_filename(), name)
 
 
 def add_user(name, email=None, meta=None):
@@ -119,7 +127,6 @@ def add_user(name, email=None, meta=None):
             "changelog": get_default_user_changelog_filename(name)
         }
         set_setting("accounts", "users", name, user, meta=meta)
-    
     
 
 def get_user_email(name):
@@ -191,6 +198,15 @@ def get_balance(name, asset):
 _set_balance_callbacks_lock = threading.RLock()
 _pre_set_balance_callbacks = {}
 _post_set_balance_callbacks = {}
+
+def has_pre_set_balance_callback(name):
+    with _set_balance_callbacks_lock:
+        return name in _pre_set_balance_callbacks
+
+def has_post_set_balance_callback(name):
+    with _set_balance_callbacks_lock:
+        return name in _post_set_balance_callbacks
+
 def add_pre_set_balance_callback(name, call):
     global _set_balance_callbacks_lock
     global _pre_set_balance_callbacks
@@ -309,7 +325,7 @@ def get_user_ledger_name(name, asset):
     """
     Gets a user's csv ledger file name.
     """
-    default = "ledger.%s.%s.csv" % (asset, name)
+    default = "%s.ledger.%s.%s.csv" % (get_settings_filename(), asset, name)
     return get_setting("accounts", "users", name, "balances", asset, "ledger", default=default)
 
 
@@ -341,7 +357,7 @@ def get_transfer_logfile_name():
     """
     Gets the transfer logfile name.
     """
-    return get_settings_option("accounts_transfer_log", "transfers.csv")
+    return get_settings_option("accounts_transfer_log", "%s.transfers.csv" % get_settings_filename())
 
 
 def set_transfer_logfile_name(name):
@@ -365,10 +381,18 @@ def transfer(from_user, to_user, asset, amount,
         cur_time = time.time()
 
     with _lock:
-      # double accounting
-      _credit(cur_time, to_user, from_user, asset, amount, meta)
-      _debit(cur_time, from_user, to_user, asset, amount, meta)
+        from_balance = get_balance(from_user, asset)
+        #from_user_min_value = get_user_min_value(from_user)
+        #from_user_min_value_asset = get_user_min_value_asset(from_user)
+        #from_balance_in_min_val_asset = get_price(amount, asset, from_user_min_value_asset)
 
-      # append to transfers log csv
-      fields=[cur_time, from_user, to_user, asset, float(amount), meta]
-      append_record(get_transfer_logfile_name(), fields)    
+        if from_balance - amount < 0.0:
+            raise InsufficientBalance(from_user, to_user, asset, amount, meta)
+        
+        # double accounting
+        _credit(cur_time, to_user, from_user, asset, amount, meta)
+        _debit(cur_time, from_user, to_user, asset, amount, meta)
+
+        # append to transfers log csv
+        fields=[cur_time, from_user, to_user, asset, float(amount), meta]
+        append_record(get_transfer_logfile_name(), fields)    

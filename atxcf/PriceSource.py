@@ -744,7 +744,7 @@ def set_conversion(conv_mkt, value):
     
 class Conversions(PriceSource):
     """
-    Contains mappings and conversions between symbols such as
+    Contains linear mappings and conversions between symbols such as
     mNXT <-> NXT, XBT <-> BTC, etc.
     """
 
